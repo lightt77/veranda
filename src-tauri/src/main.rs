@@ -12,6 +12,7 @@ use db::Database;
 use models::*;
 use services::{ImageService, SoundService};
 use std::sync::Arc;
+use tauri_plugin_cli::CliExt;
 
 
 /// Application state shared across commands
@@ -415,6 +416,334 @@ async fn set_setting(
     state.db.set_setting(&key, &value).map_err(|e| e.to_string())
 }
 
+// ==================== CLI Handlers ====================
+
+fn handle_cli_matches(
+    matches: &tauri_plugin_cli::Matches,
+    db: &Arc<Database>,
+    background: &Arc<BackgroundService>,
+) -> Result<(), String> {
+    if let Some(command) = &matches.subcommand {
+        match command.name.as_str() {
+            "timer" => handle_timer_command(&command.matches, db, background),
+            "stopwatch" => handle_stopwatch_command(&command.matches, db, background),
+            "todo" => handle_todo_command(&command.matches, db),
+            "daemon" => {
+                println!("Background daemon is running...");
+                println!("Press Ctrl+C to exit.");
+                loop {
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                }
+            }
+            _ => Err("Unknown command".to_string()),
+        }
+    } else {
+        Err("No command specified. Use --help for usage information.".to_string())
+    }
+}
+
+fn handle_timer_command(
+    matches: &tauri_plugin_cli::Matches,
+    db: &Arc<Database>,
+    background: &Arc<BackgroundService>,
+) -> Result<(), String> {
+    let action = matches
+        .args
+        .get("action")
+        .and_then(|v| v.value.as_str())
+        .unwrap_or("list");
+
+    match action {
+        "list" => {
+            let timers = db.get_timers(None).map_err(|e| e.to_string())?;
+            if timers.is_empty() {
+                println!("No timers found.");
+            } else {
+                println!("Timers:");
+                for timer in timers {
+                    let status_icon = match timer.status {
+                        crate::models::timer::TimerStatus::Running => "▶",
+                        crate::models::timer::TimerStatus::Paused => "⏸",
+                        crate::models::timer::TimerStatus::Done => "✓",
+                        _ => "○",
+                    };
+                    println!(
+                        "  {} {} - {}s remaining ({:?})",
+                        status_icon, timer.label, timer.remaining_seconds, timer.status
+                    );
+                }
+            }
+            Ok(())
+        }
+        "create" => {
+            let label = matches
+                .args
+                .get("label")
+                .and_then(|v| v.value.as_str())
+                .unwrap_or("Untitled Timer")
+                .to_string();
+            let duration = matches
+                .args
+                .get("duration")
+                .and_then(|v| v.value.as_str())
+                .unwrap_or("300")
+                .parse::<i64>()
+                .map_err(|_| "Invalid duration")?;
+
+            let req = timer::CreateTimerRequest {
+                label,
+                duration_seconds: duration,
+                note: None,
+            };
+            let timer = db.create_timer(req).map_err(|e| e.to_string())?;
+            println!("Created timer: {} (ID: {})", timer.label, timer.id);
+            Ok(())
+        }
+        "start" => {
+            let id = matches
+                .args
+                .get("id")
+                .and_then(|v| v.value.as_str())
+                .ok_or("Timer ID required")?;
+            if let Some(timer) = db.get_timer(id).map_err(|e| e.to_string())? {
+                let now = chrono::Utc::now();
+                db.update_timer_state(id, timer::TimerStatus::Running, timer.remaining_seconds, Some(now))
+                    .map_err(|e| e.to_string())?;
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                rt.block_on(async {
+                    background.start_timer(id).await.map_err(|e| e.to_string())
+                })?;
+                println!("Started timer: {}", timer.label);
+                Ok(())
+            } else {
+                Err("Timer not found".to_string())
+            }
+        }
+        "pause" => {
+            let id = matches
+                .args
+                .get("id")
+                .and_then(|v| v.value.as_str())
+                .ok_or("Timer ID required")?;
+            if let Some(timer) = db.get_timer(id).map_err(|e| e.to_string())? {
+                db.update_timer_state(id, timer::TimerStatus::Paused, timer.remaining_seconds, None)
+                    .map_err(|e| e.to_string())?;
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                rt.block_on(async { background.pause_timer(id).await });
+                println!("Paused timer: {}", timer.label);
+                Ok(())
+            } else {
+                Err("Timer not found".to_string())
+            }
+        }
+        "reset" => {
+            let id = matches
+                .args
+                .get("id")
+                .and_then(|v| v.value.as_str())
+                .ok_or("Timer ID required")?;
+            if let Some(timer) = db.get_timer(id).map_err(|e| e.to_string())? {
+                db.update_timer_state(
+                    id,
+                    timer::TimerStatus::Created,
+                    timer.duration_seconds,
+                    None,
+                )
+                .map_err(|e| e.to_string())?;
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                rt.block_on(async { background.pause_timer(id).await });
+                println!("Reset timer: {}", timer.label);
+                Ok(())
+            } else {
+                Err("Timer not found".to_string())
+            }
+        }
+        _ => Err("Unknown timer action".to_string()),
+    }
+}
+
+fn handle_stopwatch_command(
+    matches: &tauri_plugin_cli::Matches,
+    db: &Arc<Database>,
+    background: &Arc<BackgroundService>,
+) -> Result<(), String> {
+    let action = matches
+        .args
+        .get("action")
+        .and_then(|v| v.value.as_str())
+        .unwrap_or("list");
+
+    match action {
+        "list" => {
+            let stopwatches = db.get_stopwatches().map_err(|e| e.to_string())?;
+            if stopwatches.is_empty() {
+                println!("No stopwatches found.");
+            } else {
+                println!("Stopwatches:");
+                for sw in stopwatches {
+                    let status_icon = match sw.status {
+                        crate::models::stopwatch::StopwatchStatus::Running => "▶",
+                        crate::models::stopwatch::StopwatchStatus::Paused => "⏸",
+                        _ => "○",
+                    };
+                    println!(
+                        "  {} {} - {}s elapsed ({:?})",
+                        status_icon, sw.label, sw.elapsed_seconds, sw.status
+                    );
+                }
+            }
+            Ok(())
+        }
+        "create" => {
+            let label = matches
+                .args
+                .get("label")
+                .and_then(|v| v.value.as_str())
+                .unwrap_or("Untitled Stopwatch")
+                .to_string();
+
+            let req = stopwatch::CreateStopwatchRequest {
+                label,
+            };
+            let sw = db.create_stopwatch(req).map_err(|e| e.to_string())?;
+            println!("Created stopwatch: {} (ID: {})", sw.label, sw.id);
+            Ok(())
+        }
+        "start" => {
+            let id = matches
+                .args
+                .get("id")
+                .and_then(|v| v.value.as_str())
+                .ok_or("Stopwatch ID required")?;
+            if let Some(sw) = db.get_stopwatch(id).map_err(|e| e.to_string())? {
+                let now = chrono::Utc::now();
+                db.update_stopwatch_state(id, stopwatch::StopwatchStatus::Running, sw.elapsed_seconds, Some(now))
+                    .map_err(|e| e.to_string())?;
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                rt.block_on(async {
+                    background.start_stopwatch(id).await.map_err(|e| e.to_string())
+                })?;
+                println!("Started stopwatch: {}", sw.label);
+                Ok(())
+            } else {
+                Err("Stopwatch not found".to_string())
+            }
+        }
+        "pause" => {
+            let id = matches
+                .args
+                .get("id")
+                .and_then(|v| v.value.as_str())
+                .ok_or("Stopwatch ID required")?;
+            if let Some(sw) = db.get_stopwatch(id).map_err(|e| e.to_string())? {
+                db.update_stopwatch_state(id, stopwatch::StopwatchStatus::Paused, sw.elapsed_seconds, None)
+                    .map_err(|e| e.to_string())?;
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                rt.block_on(async { background.pause_stopwatch(id).await });
+                println!("Paused stopwatch: {}", sw.label);
+                Ok(())
+            } else {
+                Err("Stopwatch not found".to_string())
+            }
+        }
+        "reset" => {
+            let id = matches
+                .args
+                .get("id")
+                .and_then(|v| v.value.as_str())
+                .ok_or("Stopwatch ID required")?;
+            if let Some(sw) = db.get_stopwatch(id).map_err(|e| e.to_string())? {
+                db.update_stopwatch_state(id, stopwatch::StopwatchStatus::Created, 0, None)
+                    .map_err(|e| e.to_string())?;
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                rt.block_on(async { background.pause_stopwatch(id).await });
+                println!("Reset stopwatch: {}", sw.label);
+                Ok(())
+            } else {
+                Err("Stopwatch not found".to_string())
+            }
+        }
+        _ => Err("Unknown stopwatch action".to_string()),
+    }
+}
+
+fn handle_todo_command(
+    matches: &tauri_plugin_cli::Matches,
+    db: &Arc<Database>,
+) -> Result<(), String> {
+    let action = matches
+        .args
+        .get("action")
+        .and_then(|v| v.value.as_str())
+        .unwrap_or("list");
+
+    match action {
+        "list" => {
+            let todos = db
+                .get_todos(None)
+                .map_err(|e| e.to_string())?;
+            if todos.is_empty() {
+                println!("No todos found.");
+            } else {
+                println!("Todos:");
+                for todo in todos {
+                    let status_icon = match todo.status {
+                        crate::models::todo::TodoStatus::Done => "✓",
+                        crate::models::todo::TodoStatus::Archived => "✗",
+                        _ => "○",
+                    };
+                    println!(
+                        "  {} {} - ({:?})",
+                        status_icon, todo.task_name, todo.status
+                    );
+                }
+            }
+            Ok(())
+        }
+        "add" => {
+            let task = matches
+                .args
+                .get("task")
+                .and_then(|v| v.value.as_str())
+                .ok_or("Task name required")?
+                .to_string();
+
+            let req = todo::CreateTodoRequest {
+                task_name: task,
+                task_desc: None,
+                project: None,
+                labels: None,
+            };
+            let todo = db.create_todo(req).map_err(|e| e.to_string())?;
+            println!("Added todo: {} (ID: {})", todo.task_name, todo.id);
+            Ok(())
+        }
+        "done" => {
+            let id = matches
+                .args
+                .get("id")
+                .and_then(|v| v.value.as_str())
+                .ok_or("Todo ID required")?;
+            db.update_todo_status(id, todo::TodoStatus::Done)
+                .map_err(|e| e.to_string())?;
+            println!("Marked todo as done.");
+            Ok(())
+        }
+        "archive" => {
+            let id = matches
+                .args
+                .get("id")
+                .and_then(|v| v.value.as_str())
+                .ok_or("Todo ID required")?;
+            db.update_todo_status(id, todo::TodoStatus::Archived)
+                .map_err(|e| e.to_string())?;
+            println!("Archived todo.");
+            Ok(())
+        }
+        _ => Err("Unknown todo action".to_string()),
+    }
+}
+
 // ==================== App Lifecycle ====================
 
 fn main() {
@@ -434,12 +763,13 @@ fn main() {
     let background = background::spawn_background_service(database.clone());
 
     let app_state = AppState {
-        db: database,
-        background,
+        db: database.clone(),
+        background: background.clone(),
     };
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_cli::init())
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             // Health
@@ -485,6 +815,28 @@ fn main() {
             delete_image,
             get_random_background,
         ])
+        .setup(move |app| {
+            // Check for CLI matches
+            let cli = app.cli();
+            match cli.matches() {
+                Ok(matches) => {
+                    if matches.subcommand.is_some() {
+                        // CLI mode - handle command and exit
+                        if let Err(e) = handle_cli_matches(&matches, &database, &background) {
+                            eprintln!("Error: {}", e);
+                            std::process::exit(1);
+                        }
+                        std::process::exit(0);
+                    }
+                    // No CLI command - continue with GUI
+                    Ok(())
+                }
+                Err(e) => {
+                    eprintln!("CLI error: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        })
         .on_window_event(|_window, event| {
             // Handle window close - background service continues running
             if let tauri::WindowEvent::CloseRequested { .. } = event {
