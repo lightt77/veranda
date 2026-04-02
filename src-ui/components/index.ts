@@ -3,3 +3,8 @@ export { Sidebar } from './Sidebar';
 export { TimerView } from './TimerView';
 export { StopwatchView } from './StopwatchView';
 export { TodoView } from './TodoView';
+export { TimerCard } from './TimerCard';
+export { StopwatchCard } from './StopwatchCard';
+export { CreateTimerModal } from './CreateTimerModal';
+export { CreateStopwatchModal } from './CreateStopwatchModal';
+export { EditTimerModal } from './EditTimerModal';
