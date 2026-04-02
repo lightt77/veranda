@@ -431,6 +431,14 @@ fn handle_cli_matches(
             "daemon" => {
                 println!("Background daemon is running...");
                 println!("Press Ctrl+C to exit.");
+                // Set daemon mode to prevent idle timeout
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                rt.block_on(async {
+                    background.set_daemon_mode(true).await;
+                    // Load any existing active timers/stopwatches
+                    background.ensure_running().await.map_err(|e| e.to_string())
+                })?;
+                // Run forever
                 loop {
                     std::thread::sleep(std::time::Duration::from_secs(1));
                 }
