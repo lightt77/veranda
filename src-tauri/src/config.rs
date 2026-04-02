@@ -1,13 +1,18 @@
 use std::path::PathBuf;
 
 /// Central configuration for Veranda
-pub const DATA_DIR: &str = "../veranda-data";
+pub const DATA_DIR: &str = "$HOME/.veranda-data";
 pub const DB_NAME: &str = "veranda.db";
 pub const IMAGES_DIR: &str = "images";
 pub const SOUNDS_DIR: &str = "sounds";
 
 /// Get the absolute path to the data directory
 pub fn get_data_dir() -> PathBuf {
+    if DATA_DIR.starts_with("$HOME/") {
+        if let Some(home) = dirs::home_dir() {
+            return home.join(&DATA_DIR[6..]);
+        }
+    }
     PathBuf::from(DATA_DIR)
 }
 

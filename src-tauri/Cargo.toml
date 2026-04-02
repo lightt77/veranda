@@ -36,6 +36,10 @@ tokio = { version = "1.35", features = ["rt-multi-thread", "sync", "time"] }
 sha2 = "0.10"
 rand = "0.8"
 
+# Directories
+
+dirs = "5.0"
+
 [[bin]]
 name = "veranda"
 path = "src/main.rs"

@@ -1,7 +1,6 @@
-use crate::config::DATA_DIR;
 use rusqlite::{Connection, Result};
 use std::fs;
-use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 // Include operation modules
@@ -19,10 +18,19 @@ pub struct Database {
 impl Database {
     /// Initialize the database, creating it if it doesn't exist
     pub fn new() -> Result<Self> {
-        // Ensure data directory exists
-        fs::create_dir_all(DATA_DIR).map_err(|_e| rusqlite::Error::ExecuteReturnedResults)?;
+        let data_dir = crate::config::get_data_dir();
 
-        let db_path = Path::new(DATA_DIR).join("veranda.db");
+        // Ensure data directory exists
+        fs::create_dir_all(&data_dir).map_err(|e| {
+            eprintln!(
+                "Failed to create data directory '{}': {}",
+                data_dir.display(),
+                e
+            );
+            rusqlite::Error::InvalidPath(data_dir.clone())
+        })?;
+
+        let db_path = data_dir.join("veranda.db");
         let conn = Connection::open(&db_path)?;
 
         let db = Database {
