@@ -1,50 +1,41 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
 
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
   const [name, setName] = useState("");
 
   async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
     setGreetMsg(await invoke("greet", { name }));
   }
 
   return (
-    <div className="container">
-      <h1>Welcome to Veranda!</h1>
-
-      <div className="row">
-        <a href="https://vitejs.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://reactjs.org" target="_blank">
-          <img src="/react.svg" className="logo react" alt="React logo" />
-        </a>
-      </div>
-
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-900 text-white">
+      <h1 className="text-4xl font-bold mb-8">Welcome to Veranda!</h1>
 
       <form
-        className="row"
+        className="flex gap-4 mb-8"
         onSubmit={(e) => {
           e.preventDefault();
           greet();
         }}
       >
         <input
-          id="greet-input"
+          className="px-4 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
           onChange={(e) => setName(e.currentTarget.value)}
           placeholder="Enter a name..."
         />
-        <button type="submit">Greet</button>
+        <button 
+          type="submit"
+          className="px-6 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
+        >
+          Greet
+        </button>
       </form>
 
-      <p>{greetMsg}</p>
+      {greetMsg && (
+        <p className="text-xl text-blue-400">{greetMsg}</p>
+      )}
     </div>
   );
 }
