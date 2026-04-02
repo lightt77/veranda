@@ -3,8 +3,10 @@
 
 mod config;
 mod db;
+mod models;
 
 use db::Database;
+use models::*;
 use std::sync::Arc;
 
 /// Application state shared across commands
