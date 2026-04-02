@@ -1,42 +1,58 @@
-import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useState, useEffect } from 'react';
+import { Layout, Sidebar, TimerView, StopwatchView, TodoView } from './components';
+import { invoke } from '@tauri-apps/api/core';
+
+type Tab = 'timers' | 'stopwatches' | 'todos';
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+  const [activeTab, setActiveTab] = useState<Tab>('timers');
+  const [isReady, setIsReady] = useState(false);
 
-  async function greet() {
-    setGreetMsg(await invoke("greet", { name }));
+  useEffect(() => {
+    // Health check on startup
+    invoke<string>('health_check')
+      .then((result) => {
+        console.log('Backend status:', result);
+        setIsReady(true);
+      })
+      .catch((err) => {
+        console.error('Backend error:', err);
+        setIsReady(true); // Still show UI even if backend has issues
+      });
+  }, []);
+
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'timers':
+        return <TimerView />;
+      case 'stopwatches':
+        return <StopwatchView />;
+      case 'todos':
+        return <TodoView />;
+      default:
+        return <TimerView />;
+    }
+  };
+
+  if (!isReady) {
+    return (
+      <Layout>
+        <div className="flex items-center justify-center h-screen">
+          <div className="text-xl text-gray-400">Loading Veranda...</div>
+        </div>
+      </Layout>
+    );
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-900 text-white">
-      <h1 className="text-4xl font-bold mb-8">Welcome to Veranda!</h1>
-
-      <form
-        className="flex gap-4 mb-8"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          className="px-4 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button 
-          type="submit"
-          className="px-6 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
-        >
-          Greet
-        </button>
-      </form>
-
-      {greetMsg && (
-        <p className="text-xl text-blue-400">{greetMsg}</p>
-      )}
-    </div>
+    <Layout>
+      <div className="flex h-screen">
+        <Sidebar activeTab={activeTab} onTabChange={(tab) => setActiveTab(tab as Tab)} />
+        <main className="flex-1 overflow-auto">
+          {renderContent()}
+        </main>
+      </div>
+    </Layout>
   );
 }
 
