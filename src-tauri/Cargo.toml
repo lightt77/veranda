@@ -30,6 +30,10 @@ mac-notification-sys = "0.6"
 # Sound playback
 rodio = "0.17"
 
+# Async runtime
+anyhow = "1.0"
+tokio = { version = "1.35", features = ["rt-multi-thread", "sync", "time"] }
+
 [[bin]]
 name = "veranda"
 path = "src/main.rs"
