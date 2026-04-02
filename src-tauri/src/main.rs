@@ -10,7 +10,7 @@ mod services;
 use background::BackgroundService;
 use db::Database;
 use models::*;
-use services::ImageService;
+use services::{ImageService, SoundService};
 use std::sync::Arc;
 
 
@@ -321,6 +321,18 @@ async fn show_notification(title: String, body: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+async fn play_sound(sound_type: Option<String>) -> Result<(), String> {
+    let sound_service = SoundService::new().map_err(|e| e.to_string())?;
+    
+    match sound_type.as_deref() {
+        Some("notification") => sound_service.play_notification(),
+        _ => sound_service.play_timer_complete(),
+    }
+    
+    Ok(())
+}
+
 // ==================== Image/Background Commands ====================
 
 #[tauri::command]
@@ -434,6 +446,7 @@ fn main() {
             health_check,
             // Notifications
             show_notification,
+            play_sound,
             // Timers
             create_timer,
             get_timers,

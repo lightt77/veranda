@@ -27,9 +27,6 @@ uuid = { version = "1.6", features = ["v4", "serde"] }
 # Notifications
 mac-notification-sys = "0.6"
 
-# Sound playback
-rodio = "0.17"
-
 # Async runtime
 anyhow = "1.0"
 tokio = { version = "1.35", features = ["rt-multi-thread", "sync", "time"] }
