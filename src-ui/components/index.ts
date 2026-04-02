@@ -8,3 +8,5 @@ export { StopwatchCard } from './StopwatchCard';
 export { CreateTimerModal } from './CreateTimerModal';
 export { CreateStopwatchModal } from './CreateStopwatchModal';
 export { EditTimerModal } from './EditTimerModal';
+export { Background } from './Background';
+export { BackgroundManager } from './BackgroundManager';
