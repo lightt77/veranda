@@ -5,10 +5,12 @@ mod background;
 mod config;
 mod db;
 mod models;
+mod services;
 
 use background::BackgroundService;
 use db::Database;
 use models::*;
+use services::ImageService;
 use std::sync::Arc;
 
 
@@ -319,6 +321,57 @@ async fn show_notification(title: String, body: String) -> Result<(), String> {
     Ok(())
 }
 
+// ==================== Image/Background Commands ====================
+
+#[tauri::command]
+async fn download_image(
+    url: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    let image_service = ImageService::new(state.db.clone());
+    image_service
+        .download_image(&url)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_images(
+    only_active: bool,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<db::images::Image>, String> {
+    state.db.get_images(only_active).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_image_active(
+    id: String,
+    active: bool,
+    state: tauri::State<'_, AppState>,
+) -> Result<bool, String> {
+    state.db.set_image_active(&id, active).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn delete_image(
+    id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<bool, String> {
+    let image_service = ImageService::new(state.db.clone());
+    image_service
+        .delete_image(&id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_random_background(state: tauri::State<'_, AppState>) -> Result<Option<String>, String> {
+    let image_service = ImageService::new(state.db.clone());
+    image_service
+        .get_random_background()
+        .map_err(|e| e.to_string())
+}
+
 // ==================== Health & Settings Commands ====================
 
 #[tauri::command]
@@ -412,6 +465,12 @@ fn main() {
             // Settings
             get_setting,
             set_setting,
+            // Images/Backgrounds
+            download_image,
+            get_images,
+            set_image_active,
+            delete_image,
+            get_random_background,
         ])
         .on_window_event(|_window, event| {
             // Handle window close - background service continues running
