@@ -6,6 +6,7 @@
 use crate::db::Database;
 use crate::models::timer::TimerStatus;
 use crate::models::stopwatch::StopwatchStatus;
+use crate::services::SoundService;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -15,6 +16,7 @@ use tokio::time::interval;
 /// Background service state
 pub struct BackgroundService {
     db: Arc<Database>,
+    sound_service: SoundService,
     /// Active timer calculations (timer_id -> last_update_time)
     timer_states: RwLock<HashMap<String, Instant>>,
     /// Active stopwatch calculations (stopwatch_id -> last_update_time)
@@ -26,8 +28,10 @@ pub struct BackgroundService {
 impl BackgroundService {
     /// Create a new background service
     pub fn new(db: Arc<Database>) -> Self {
+        let sound_service = SoundService::new().expect("Failed to initialize sound service");
         Self {
             db,
+            sound_service,
             timer_states: RwLock::new(HashMap::new()),
             stopwatch_states: RwLock::new(HashMap::new()),
             running: RwLock::new(false),
@@ -146,8 +150,9 @@ impl BackgroundService {
                             )?;
                             states.remove(timer_id);
                             
-                            // TODO: Trigger notification
+                            // Play notification sound and send notification
                             println!("Timer completed: {}", timer.label);
+                            self.sound_service.play_timer_complete();
                         } else {
                             // Update remaining time
                             self.db.update_timer_state(
