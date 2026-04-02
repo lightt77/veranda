@@ -4,6 +4,13 @@ use std::fs;
 use std::path::Path;
 use std::sync::Mutex;
 
+// Include operation modules
+pub mod images;
+pub mod settings;
+pub mod stopwatches;
+pub mod timers;
+pub mod todos;
+
 /// Database connection wrapper with migration support
 pub struct Database {
     conn: Mutex<Connection>,
