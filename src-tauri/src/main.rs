@@ -300,6 +300,25 @@ async fn get_labels(state: tauri::State<'_, AppState>) -> Result<Vec<todo::Label
     state.db.get_labels().map_err(|e| e.to_string())
 }
 
+// ==================== Notification Commands ====================
+
+#[tauri::command]
+async fn show_notification(title: String, body: String) -> Result<(), String> {
+    // Use macOS notification system
+    #[cfg(target_os = "macos")]
+    {
+        use mac_notification_sys::{Notification, Sound};
+        Notification::new()
+            .title(&title)
+            .message(&body)
+            .sound(Sound::Default)
+            .send()
+            .map_err(|e| e.to_string())?;
+    }
+    
+    Ok(())
+}
+
 // ==================== Health & Settings Commands ====================
 
 #[tauri::command]
@@ -360,6 +379,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             // Health
             health_check,
+            // Notifications
+            show_notification,
             // Timers
             create_timer,
             get_timers,

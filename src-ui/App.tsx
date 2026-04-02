@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Layout, Sidebar, TimerView, StopwatchView, TodoView } from './components';
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { invoke } from '@tauri-apps/api/core';
 
 type Tab = 'timers' | 'stopwatches' | 'todos';
@@ -9,7 +10,6 @@ function App() {
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    // Health check on startup
     invoke<string>('health_check')
       .then((result) => {
         console.log('Backend status:', result);
@@ -17,9 +17,23 @@ function App() {
       })
       .catch((err) => {
         console.error('Backend error:', err);
-        setIsReady(true); // Still show UI even if backend has issues
+        setIsReady(true);
       });
   }, []);
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts({
+    onNewTimer: () => {
+      // Trigger new timer - this would need to be passed down to TimerView
+      console.log('Shortcut: New Timer');
+    },
+    onNewStopwatch: () => {
+      console.log('Shortcut: New Stopwatch');
+    },
+    onNewTodo: () => {
+      console.log('Shortcut: New Todo');
+    },
+  });
 
   const renderContent = () => {
     switch (activeTab) {
@@ -38,7 +52,10 @@ function App() {
     return (
       <Layout>
         <div className="flex items-center justify-center h-screen">
-          <div className="text-xl text-gray-400">Loading Veranda...</div>
+          <div className="text-center">
+            <div className="text-4xl mb-4">⏱️</div>
+            <div className="text-xl text-gray-400">Loading Veranda...</div>
+          </div>
         </div>
       </Layout>
     );
