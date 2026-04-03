@@ -519,6 +519,8 @@ fn handle_timer_command(
                     .map_err(|e| e.to_string())?;
                 let rt = tokio::runtime::Runtime::new().unwrap();
                 rt.block_on(async {
+                    // Ensure background service is running before starting timer
+                    background.ensure_running().await.map_err(|e| e.to_string())?;
                     background.start_timer(id).await.map_err(|e| e.to_string())
                 })?;
                 println!("Started timer: {}", timer.label);
@@ -629,6 +631,8 @@ fn handle_stopwatch_command(
                     .map_err(|e| e.to_string())?;
                 let rt = tokio::runtime::Runtime::new().unwrap();
                 rt.block_on(async {
+                    // Ensure background service is running before starting stopwatch
+                    background.ensure_running().await.map_err(|e| e.to_string())?;
                     background.start_stopwatch(id).await.map_err(|e| e.to_string())
                 })?;
                 println!("Started stopwatch: {}", sw.label);
@@ -767,8 +771,10 @@ fn main() {
         }
     };
 
-    // Spawn background service
-    let background = background::spawn_background_service(database.clone());
+    // Create background service (lazy spawning - doesn't start until needed)
+    let background = background::create_background_service(database.clone());
+    // Clone for window event handler
+    let background_for_window = background.clone();
 
     let app_state = AppState {
         db: database.clone(),
@@ -837,6 +843,11 @@ fn main() {
                         std::process::exit(0);
                     }
                     // No CLI command - continue with GUI
+                    // Mark GUI as open so background service stays alive
+                    let rt = tokio::runtime::Runtime::new().unwrap();
+                    rt.block_on(async {
+                        background.set_gui_open(true).await;
+                    });
                     Ok(())
                 }
                 Err(e) => {
@@ -845,11 +856,15 @@ fn main() {
                 }
             }
         })
-        .on_window_event(|_window, event| {
-            // Handle window close - background service continues running
+        .on_window_event(move |_window, event| {
+            // Handle window close - notify background service
             if let tauri::WindowEvent::CloseRequested { .. } = event {
-                println!("Window closing, but background service continues...");
-                // Don't prevent close - let the window close
+                println!("Window closing, notifying background service...");
+                // Mark GUI as closed - background service will self-terminate if no active items
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                rt.block_on(async {
+                    background_for_window.set_gui_open(false).await;
+                });
             }
         })
         .run(tauri::generate_context!())
