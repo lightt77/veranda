@@ -103,14 +103,16 @@ impl BackgroundService {
     /// Clone the service state for spawning (needed for Arc)
     fn clone_service(&self) -> BackgroundService {
         let (shutdown_tx, shutdown_rx) = watch::channel(());
+        let gui_open_val = self.gui_open.try_read().map(|g| *g).unwrap_or(false);
+        let daemon_mode_val = self.daemon_mode.try_read().map(|d| *d).unwrap_or(false);
         BackgroundService {
             db: Arc::clone(&self.db),
             sound_service: SoundService::new().expect("Failed to initialize sound service"),
             timer_states: RwLock::new(HashMap::new()),
             stopwatch_states: RwLock::new(HashMap::new()),
             running: RwLock::new(true),
-            gui_open: RwLock::new(*self.gui_open.try_read().map(|g| *g).unwrap_or(false)),
-            daemon_mode: RwLock::new(*self.daemon_mode.try_read().map(|d| *d).unwrap_or(false)),
+            gui_open: RwLock::new(gui_open_val),
+            daemon_mode: RwLock::new(daemon_mode_val),
             shutdown_tx,
             shutdown_rx: RwLock::new(shutdown_rx),
         }
