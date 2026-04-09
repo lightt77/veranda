@@ -1,0 +1,133 @@
+# =========================
+# Go Binaries
+# =========================
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go build artifacts
+/bin/
+/dist/
+/build/
+/veranda
+/veranda-cli
+
+# =========================
+# Go Modules
+# =========================
+/vendor/
+
+# =========================
+# SQLite Database Files
+# =========================
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# =========================
+# Application Data & Logs
+# =========================
+/.veranda/
+/data/
+/logs/
+*.log
+
+# =========================
+# Audio Files (user-provided)
+# =========================
+/sounds/*.mp3
+/sounds/*.wav
+/sounds/*.ogg
+/sounds/*.m4a
+/sounds/*.flac
+
+# =========================
+# IDE & Editor Files
+# =========================
+# VSCode
+.vscode/
+*.code-workspace
+
+# GoLand / IntelliJ
+.idea/
+*.iml
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+#*#
+.#*
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# =========================
+# OS Generated Files
+# =========================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+*.stackdump
+[Dd]esktop.ini
+
+# Linux
+*~
+.nfs*
+
+# =========================
+# Test & Coverage
+# =========================
+*.cover
+*.cov
+coverage.out
+coverage.html
+/test-results/
+
+# =========================
+# Temporary Files
+# =========================
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+
+# =========================
+# Environment Files
+# =========================
+.env
+.env.local
+.env.*.local
+
+# =========================
+# Debug Files
+# =========================
+debug
+__debug_bin
+
+# =========================
+# Project Specific
+# =========================
+# Daemon PID file (if we use one)
+.veranda.pid
+# Lock files
+*.lock
