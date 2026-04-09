@@ -15,6 +15,7 @@ type AmbientService struct {
 	timerService     *service.TimerService
 	stopwatchService *service.StopwatchService
 	config           *config.AppConfig
+	configDir        string
 	isAutoPlaying    bool
 	mutex            sync.RWMutex
 	stopMonitorChan  chan struct{}
@@ -37,6 +38,7 @@ func NewAmbientService(
 		timerService:     timerService,
 		stopwatchService: stopwatchService,
 		config:           cfg,
+		configDir:        configDir,
 		stopMonitorChan:  make(chan struct{}),
 	}, nil
 }
@@ -61,12 +63,16 @@ func (s *AmbientService) Stop() {
 	s.player.Stop(config.AudioFadeOutDuration)
 }
 
-// Play starts playing ambient sounds immediately
+// Play starts playing ambient sounds immediately based on config
 func (s *AmbientService) Play() error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	if err := s.player.Play(true); err != nil {
+	// Load user config to get ambient sound settings
+	userConfig := config.LoadUserConfig(s.configDir)
+
+	// Play all enabled ambient sounds
+	if err := s.player.PlayMultiple(userConfig.AmbientSounds); err != nil {
 		return err
 	}
 
@@ -87,16 +93,6 @@ func (s *AmbientService) StopPlayback() {
 // IsPlaying returns whether ambient sound is playing
 func (s *AmbientService) IsPlaying() bool {
 	return s.player.IsPlaying()
-}
-
-// SetVolume sets the volume (0.0 to 1.0)
-func (s *AmbientService) SetVolume(vol float64) {
-	s.player.SetVolume(vol)
-}
-
-// GetVolume returns the current volume
-func (s *AmbientService) GetVolume() float64 {
-	return s.player.GetVolume()
 }
 
 // monitorActivity monitors timers and stopwatches to auto-start/stop ambient sound
@@ -142,15 +138,20 @@ func (s *AmbientService) checkAndUpdatePlayback() {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	// Start fade out early if a timer is about to end and we're not already fading
-	if len(timersAboutToEnd) > 0 && s.player.IsPlaying() && !s.player.IsFading() && s.isAutoPlaying {
-		s.player.StartFadeOut(config.AudioFadeOutDuration)
-		fmt.Println("Ambient sound fading out (timer about to end)")
+	// If a timer is about to end and we're auto-playing, stop playback
+	if len(timersAboutToEnd) > 0 && s.player.IsPlaying() && s.isAutoPlaying {
+		s.player.Stop(config.AudioFadeOutDuration)
+		s.isAutoPlaying = false
+		fmt.Println("Ambient sound stopping (timer about to end)")
+		return
 	}
 
 	if anyActive && !s.player.IsPlaying() {
-		// Start ambient sound
-		if err := s.player.Play(true); err != nil {
+		// Load user config to get current ambient sound settings
+		userConfig := config.LoadUserConfig(s.configDir)
+
+		// Start ambient sound with all enabled sounds
+		if err := s.player.PlayMultiple(userConfig.AmbientSounds); err != nil {
 			fmt.Printf("Error starting ambient sound: %v\n", err)
 			return
 		}
@@ -158,19 +159,11 @@ func (s *AmbientService) checkAndUpdatePlayback() {
 		s.isAutoPlaying = true
 		fmt.Println("Ambient sound started (timer/stopwatch active)")
 	} else if !anyActive && s.player.IsPlaying() && s.isAutoPlaying {
-		// Only stop if not already fading out (StartFadeOut handles stopping)
-		if !s.player.IsFading() {
-			s.player.Stop(config.AudioFadeOutDuration)
-			s.isAutoPlaying = false
-			fmt.Println("Ambient sound stopped (no active timers)")
-		}
-		// If fading, let the fade complete and stop automatically
+		// Stop if no longer active (and we were auto-playing)
+		s.player.Stop(config.AudioFadeOutDuration)
+		s.isAutoPlaying = false
+		fmt.Println("Ambient sound stopped (no active timers)")
 	}
-}
-
-// GetCurrentFile returns the currently playing audio file
-func (s *AmbientService) GetCurrentFile() string {
-	return s.player.GetCurrentFile()
 }
 
 // GetPlayer returns the underlying audio player for use by other services
