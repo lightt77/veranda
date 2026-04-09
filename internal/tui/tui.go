@@ -226,9 +226,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.realisticStarfield.Update(time.Now())
 
 	case twinkleMsg:
-		// Only twinkle in random mode
+		// Twinkle in both modes
 		if m.starfieldMode == ModeRandom {
 			m.randomStarfield.Twinkle()
+		} else {
+			m.realisticStarfield.Twinkle()
 		}
 		return m, twinkleCmd()
 
@@ -526,11 +528,12 @@ func (m Model) renderRealisticStarfield(starAreaHeight int) string {
 		if obj.ScreenY >= 0 && obj.ScreenY < starAreaHeight &&
 			obj.ScreenX >= 0 && obj.ScreenX < m.width {
 
-			// Get symbol based on brightness
-			symbol := starfield.GetObjectSymbol(obj.Object, obj.Brightness)
+			// Get symbol based on brightness with twinkling
+			symbol := starfield.GetObjectSymbol(obj.Object, obj.Brightness, obj.TwinklePhase)
 
-			// Get color
-			color := starfield.GetObjectColor(obj.Object, obj.Brightness)
+			// Get twinkle-adjusted brightness and color
+			twinkleBrightness := starfield.GetTwinkleBrightness(obj.Brightness, obj.TwinklePhase, obj.Object.Type)
+			color := starfield.GetObjectColor(obj.Object, twinkleBrightness)
 
 			// Place symbol in grid (single character/rune)
 			if len(symbol) > 0 {

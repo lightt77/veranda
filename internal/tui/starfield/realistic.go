@@ -1,6 +1,7 @@
 package starfield
 
 import (
+	"math/rand"
 	"sort"
 	"time"
 
@@ -9,13 +10,14 @@ import (
 
 // VisibleObject represents a celestial object visible in the sky
 type VisibleObject struct {
-	Object     CelestialObject
-	Azimuth    float64 // 0-360 degrees
-	Altitude   float64 // -90 to 90 degrees
-	ScreenX    int
-	ScreenY    int
-	Brightness float64 // 0-1 based on altitude and apparent magnitude
-	IsVisible  bool
+	Object       CelestialObject
+	Azimuth      float64 // 0-360 degrees
+	Altitude     float64 // -90 to 90 degrees
+	ScreenX      int
+	ScreenY      int
+	Brightness   float64 // 0-1 based on altitude and apparent magnitude
+	TwinklePhase float64 // 0-1 twinkle phase for stars/galaxies
+	IsVisible    bool
 }
 
 // RealisticStarfield renders the actual night sky based on observer location and time
@@ -27,6 +29,7 @@ type RealisticStarfield struct {
 	width          int
 	height         int
 	starAreaHeight int
+	twinkleStates  map[string]float64 // Track twinkle phase per object
 }
 
 // NewRealisticStarfield creates a new realistic starfield
@@ -36,6 +39,7 @@ func NewRealisticStarfield(observer Observer) *RealisticStarfield {
 		observer:       observer,
 		visibleObjects: []VisibleObject{},
 		lastUpdate:     time.Time{},
+		twinkleStates:  make(map[string]float64),
 	}
 }
 
@@ -64,6 +68,37 @@ func (rs *RealisticStarfield) Update(t time.Time) bool {
 	rs.lastUpdate = t
 	rs.calculatePositions(t)
 	return true
+}
+
+// Twinkle updates the twinkle phase for stars and galaxies
+// Call this periodically (e.g., every 800ms like random starfield)
+func (rs *RealisticStarfield) Twinkle() {
+	for i := range rs.visibleObjects {
+		obj := &rs.visibleObjects[i]
+		// Only stars and galaxies twinkle - planets, moons, sun don't
+		if obj.Object.Type == ObjectTypeStar || obj.Object.Type == ObjectTypeGalaxy {
+			// Get or initialize twinkle state
+			key := obj.Object.Name
+			phase := rs.twinkleStates[key]
+
+			// Update phase - stars twinkle at different rates
+			// Brighter stars twinkle more noticeably
+			twinkleSpeed := 0.1 + (1.0-obj.Object.ApparentMag/10.0)*0.15
+			if twinkleSpeed < 0.05 {
+				twinkleSpeed = 0.05
+			}
+			if twinkleSpeed > 0.3 {
+				twinkleSpeed = 0.3
+			}
+
+			phase += twinkleSpeed
+			if phase > 1.0 {
+				phase = 0.0
+			}
+			rs.twinkleStates[key] = phase
+			obj.TwinklePhase = phase
+		}
+	}
 }
 
 // calculatePositions computes the positions of all celestial objects
@@ -158,6 +193,17 @@ func (rs *RealisticStarfield) calculateObjectPosition(obj CelestialObject, t tim
 	visible.Brightness = altitudeBrightness * magnitudeBrightness
 	visible.IsVisible = true
 
+	// Initialize twinkle phase for stars and galaxies
+	if obj.Type == ObjectTypeStar || obj.Type == ObjectTypeGalaxy {
+		if phase, ok := rs.twinkleStates[obj.Name]; ok {
+			visible.TwinklePhase = phase
+		} else {
+			// Initialize with random phase
+			visible.TwinklePhase = rand.Float64()
+			rs.twinkleStates[obj.Name] = visible.TwinklePhase
+		}
+	}
+
 	// Map to screen coordinates
 	visible.ScreenX, visible.ScreenY = rs.mapToScreen(coords.Azimuth, coords.Altitude)
 
@@ -243,15 +289,33 @@ func (rs *RealisticStarfield) GetLastUpdate() time.Time {
 }
 
 // GetObjectSymbol returns the appropriate symbol based on object type and brightness
-func GetObjectSymbol(obj CelestialObject, brightness float64) string {
-	// For stars, use different symbols based on brightness
+// twinklePhase should be 0-1 for twinkling effect
+func GetObjectSymbol(obj CelestialObject, brightness float64, twinklePhase float64) string {
+	// Calculate effective brightness with twinkling for stars and galaxies
+	effectiveBrightness := brightness
+	if (obj.Type == ObjectTypeStar || obj.Type == ObjectTypeGalaxy) && twinklePhase > 0 {
+		// Twinkle effect: vary brightness by ±15%
+		twinkle := 0.85 + 0.3*twinklePhase
+		effectiveBrightness = brightness * twinkle
+	}
+
+	// For stars, use different symbols based on effective brightness
 	if obj.Type == ObjectTypeStar {
-		if brightness > 0.8 {
+		if effectiveBrightness > 0.8 {
 			return "★"
-		} else if brightness > 0.5 {
+		} else if effectiveBrightness > 0.5 {
 			return "✦"
-		} else if brightness > 0.3 {
+		} else if effectiveBrightness > 0.3 {
 			return "*"
+		} else {
+			return "·"
+		}
+	}
+
+	// For galaxies, use different symbols based on brightness
+	if obj.Type == ObjectTypeGalaxy {
+		if effectiveBrightness > 0.4 {
+			return "∴"
 		} else {
 			return "·"
 		}
@@ -259,6 +323,16 @@ func GetObjectSymbol(obj CelestialObject, brightness float64) string {
 
 	// For other objects, use the configured symbol
 	return obj.Symbol
+}
+
+// GetTwinkleBrightness returns the brightness adjusted for twinkling
+func GetTwinkleBrightness(baseBrightness, twinklePhase float64, objType ObjectType) float64 {
+	if (objType == ObjectTypeStar || objType == ObjectTypeGalaxy) && twinklePhase > 0 {
+		// Twinkle effect: vary brightness by ±15%
+		twinkle := 0.85 + 0.3*twinklePhase
+		return baseBrightness * twinkle
+	}
+	return baseBrightness
 }
 
 // GetObjectColor returns the color with brightness adjustment
