@@ -136,9 +136,9 @@ var GalaxyCatalog = []CelestialObject{
 
 // Leo Triplet is a group, adding individual galaxies
 var LeoTripletCatalog = []CelestialObject{
-	{Name: "M65", Type: ObjectTypeGalaxy, Symbol: "·", Color: lipgloss.Color("#f5c2e7"), ApparentMag: 9.3, RightAscension: 169.733, Declination: 13.093, IsExtended: true},
-	{Name: "M66", Type: ObjectTypeGalaxy, Symbol: "·", Color: lipgloss.Color("#f5c2e7"), ApparentMag: 8.9, RightAscension: 170.063, Declination: 12.991, IsExtended: true},
-	{Name: "NGC 3628", Type: ObjectTypeGalaxy, Symbol: "·", Color: lipgloss.Color("#f5c2e7"), ApparentMag: 9.5, RightAscension: 170.485, Declination: 13.589, IsExtended: true},
+	{Name: "Leo Triplet Alpha", Type: ObjectTypeGalaxy, Symbol: "·", Color: lipgloss.Color("#f5c2e7"), ApparentMag: 9.3, RightAscension: 169.733, Declination: 13.093, IsExtended: true},
+	{Name: "Leo Triplet Beta", Type: ObjectTypeGalaxy, Symbol: "·", Color: lipgloss.Color("#f5c2e7"), ApparentMag: 8.9, RightAscension: 170.063, Declination: 12.991, IsExtended: true},
+	{Name: "Leo Triplet Gamma", Type: ObjectTypeGalaxy, Symbol: "·", Color: lipgloss.Color("#f5c2e7"), ApparentMag: 9.5, RightAscension: 170.485, Declination: 13.589, IsExtended: true},
 }
 
 // GetAllCelestialObjects returns the complete catalog
