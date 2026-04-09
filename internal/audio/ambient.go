@@ -171,3 +171,8 @@ func (s *AmbientService) checkAndUpdatePlayback() {
 func (s *AmbientService) GetCurrentFile() string {
 	return s.player.GetCurrentFile()
 }
+
+// GetPlayer returns the underlying audio player for use by other services
+func (s *AmbientService) GetPlayer() *Player {
+	return s.player
+}
