@@ -212,36 +212,31 @@ func (p *Player) playFile(filename string) error {
 	if err != nil {
 		return err
 	}
-	// Note: We don't defer f.Close() here because the file needs to stay open
-	// until playback completes. The streamer will close it when done.
 
 	streamer, format, err := mp3.Decode(f)
 	if err != nil {
 		f.Close()
 		return fmt.Errorf("failed to decode MP3: %w", err)
 	}
-	// Note: We don't defer streamer.Close() here because the streamer needs
-	// to stay open until playback completes. The callback will close it.
 
 	// Resample to speaker's sample rate if needed
 	resampled := beep.Resample(4, format.SampleRate, p.sampleRate, streamer)
 
-	// Calculate initial volume (use target volume directly)
-	db := 20 * math.Log10(p.volume)
-	if p.volume == 0 {
-		db = -60
-	}
-
-	// Create volume control with target volume
+	// Create volume control
 	p.mutex.Lock()
 	p.volumeCtrl = &effects.Volume{
 		Streamer: resampled,
 		Base:     2,
-		Volume:   db,
-		Silent:   p.volume == 0,
+		Volume:   0,
+		Silent:   false,
 	}
 	p.currentFile = filename
+	p.volume = 0.5 // Ensure volume is set
 	p.mutex.Unlock()
+
+	// Set volume immediately
+	db := 20 * math.Log10(0.5)
+	p.volumeCtrl.Volume = db
 
 	// Create controller for pause/stop
 	p.ctrl = &beep.Ctrl{Streamer: p.volumeCtrl}
