@@ -58,6 +58,11 @@ func (n *Notifier) monitorTimers() {
 
 		now := time.Now()
 		for _, timer := range timers {
+			// Skip if timer is not running (might have been completed by another check)
+			if timer.Status != "running" {
+				continue
+			}
+
 			if timer.IsExpired(now) {
 				// Check if we already notified for this timer
 				if !notifiedTimers[timer.ID] {

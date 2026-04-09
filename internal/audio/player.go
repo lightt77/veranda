@@ -64,7 +64,7 @@ func NewPlayer(cfg *config.AppConfig) (*Player, error) {
 		soundsDir:   cfg.SoundsDir,
 		chimesDir:   cfg.ChimesDir,
 		ambienceDir: cfg.AmbienceDir,
-		volume:      0.5, // Default 50% volume
+		volume:      0.8, // Default 80% volume (louder for testing)
 		sampleRate:  speakerSampleRate,
 		stopChan:    make(chan struct{}),
 	}
@@ -173,18 +173,23 @@ func (p *Player) SetVolume(vol float64) {
 // Play starts playing ambient sounds with optional shuffle
 func (p *Player) Play(shuffle bool) error {
 	p.mutex.Lock()
-	defer p.mutex.Unlock()
 
 	if p.isPlaying {
+		p.mutex.Unlock()
 		return nil // Already playing
 	}
 
-	files, err := p.getSoundFiles()
+	ambienceDir := p.ambienceDir
+	p.mutex.Unlock()
+
+	// Get sound files WITHOUT holding the lock (avoid deadlock with getSoundFiles)
+	files, err := p.getSoundFilesFromDir(ambienceDir)
 	if err != nil {
 		return err
 	}
+
 	if len(files) == 0 {
-		return fmt.Errorf("no audio files found in %s", p.soundsDir)
+		return fmt.Errorf("no audio files found in ambience directory: %s", ambienceDir)
 	}
 
 	if shuffle {
@@ -193,9 +198,11 @@ func (p *Player) Play(shuffle bool) error {
 		})
 	}
 
+	p.mutex.Lock()
 	p.isPlaying = true
 	p.wg.Add(1)
 	go p.playbackLoop(files)
+	p.mutex.Unlock()
 
 	// Give playbackLoop a moment to initialize volumeCtrl
 	time.Sleep(100 * time.Millisecond)
@@ -233,13 +240,14 @@ func (p *Player) Stop(fadeOutMs int64) {
 // FadeIn gradually increases volume from 0 to target
 func (p *Player) FadeIn(durationMs int64) {
 	p.mutex.Lock()
-	defer p.mutex.Unlock()
-
 	if p.volumeCtrl == nil || durationMs <= 0 {
+		p.mutex.Unlock()
 		return
 	}
 
 	targetVolume := p.volume
+	p.mutex.Unlock()
+
 	steps := int(durationMs / 50) // Update every 50ms
 	if steps < 1 {
 		steps = 1
@@ -306,29 +314,9 @@ func (p *Player) playFile(filename string) error {
 	// Resample to speaker's sample rate if needed
 	resampled := beep.Resample(4, format.SampleRate, p.sampleRate, streamer)
 
-	// Create volume control wrapper
-	p.mutex.Lock()
-	volCtrl := &effects.Volume{
-		Streamer: resampled,
-		Base:     2,
-		Volume:   0, // Start silent for fade-in
-		Silent:   true,
-	}
-	p.volumeCtrl = volCtrl
-	targetVol := p.volume
-	p.currentFile = filename
-	p.mutex.Unlock()
-
-	// Set initial volume
-	if targetVol > 0 {
-		db := 20 * math.Log10(targetVol)
-		volCtrl.Volume = db
-		volCtrl.Silent = false
-	}
-
-	// Play with volume control
+	// Play (without volume control - using direct playback like chimes)
 	done := make(chan struct{})
-	speaker.Play(beep.Seq(volCtrl, beep.Callback(func() {
+	speaker.Play(beep.Seq(resampled, beep.Callback(func() {
 		streamer.Close()
 		f.Close()
 		close(done)
@@ -346,11 +334,8 @@ func (p *Player) playFile(filename string) error {
 		if !isFadeStop {
 			// Hard stop - clear speaker immediately
 			speaker.Clear()
-		} else {
-			// Fade stop - volume is already 0, just signal and wait for natural end
-			// Give a small delay for the last buffered audio to play at 0 volume
-			time.Sleep(100 * time.Millisecond)
 		}
+		// For fade stop, volume is already 0, just close resources
 		streamer.Close()
 		f.Close()
 		return nil
@@ -398,6 +383,11 @@ func (p *Player) getSoundFiles() ([]string, error) {
 	ambienceDir := p.ambienceDir
 	p.mutex.RUnlock()
 
+	return p.getSoundFilesFromDir(ambienceDir)
+}
+
+// getSoundFilesFromDir returns all MP3 files in the given directory
+func (p *Player) getSoundFilesFromDir(ambienceDir string) ([]string, error) {
 	entries, err := os.ReadDir(ambienceDir)
 	if err != nil {
 		if os.IsNotExist(err) {
