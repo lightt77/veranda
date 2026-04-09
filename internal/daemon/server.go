@@ -118,6 +118,9 @@ func (s *Server) setupRoutes() {
 	// Health check
 	s.router.Get("/health", s.handleHealth)
 
+	// Daemon control
+	s.router.Post("/daemon/shutdown", s.handleShutdown)
+
 	// Timer routes
 	s.router.Route("/timers", func(r chi.Router) {
 		r.Get("/", s.handleGetTimers)
