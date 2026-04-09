@@ -234,17 +234,23 @@ func (p *Player) playFile(filename string) error {
 	// Resample to speaker's sample rate if needed
 	resampled := beep.Resample(4, format.SampleRate, p.sampleRate, streamer)
 
-	// Create volume control
+	// Calculate initial volume (use target volume directly)
+	db := 20 * math.Log10(p.volume)
+	if p.volume == 0 {
+		db = -60
+	}
+
+	// Create volume control with target volume
 	p.mutex.Lock()
 	p.volumeCtrl = &effects.Volume{
 		Streamer: resampled,
 		Base:     2,
-		Volume:   0, // Start silent for fade in
-		Silent:   true,
+		Volume:   db,
+		Silent:   p.volume == 0,
 	}
 	p.currentFile = filename
 	p.mutex.Unlock()
-	fmt.Printf("[Audio] Starting playback (will fade in)\n")
+	fmt.Printf("[Audio] Starting playback at volume %.2f (%.1f dB)\n", p.volume, db)
 
 	// Create controller for pause/stop
 	p.ctrl = &beep.Ctrl{Streamer: p.volumeCtrl}
