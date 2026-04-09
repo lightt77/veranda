@@ -96,10 +96,14 @@ func (s *Service) PlayTimerCompletionSound() error {
 	// Reload config from disk to get latest changes
 	userConfig := config.LoadUserConfig(configDir)
 
+	fmt.Fprintf(os.Stderr, "[notify] Attempting to play timer sound: %s\n", userConfig.TimerCompletionSound)
+	fmt.Fprintf(os.Stderr, "[notify] Audio player available: %v\n", audioPlayer != nil)
+
 	// If we have an audio player and config, try to play the configured sound
 	if audioPlayer != nil {
 		soundFile := userConfig.TimerCompletionSound
 		if err := audioPlayer.PlayOneShot(soundFile); err == nil {
+			fmt.Fprintf(os.Stderr, "[notify] Sound played successfully\n")
 			return nil // Sound played successfully
 		} else {
 			// Log the error for debugging
