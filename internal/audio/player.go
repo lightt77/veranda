@@ -152,7 +152,6 @@ func (p *Player) FadeIn(durationMs int64) {
 	defer p.mutex.Unlock()
 
 	if p.volumeCtrl == nil || durationMs <= 0 {
-		fmt.Printf("[Audio] FadeIn: volumeCtrl is nil, skipping fade-in\n")
 		return
 	}
 
@@ -163,11 +162,9 @@ func (p *Player) FadeIn(durationMs int64) {
 	}
 
 	go func() {
-		fmt.Printf("[Audio] Starting fade-in over %dms (steps: %d)\n", durationMs, steps)
 		for i := 0; i <= steps; i++ {
 			select {
 			case <-p.stopChan:
-				fmt.Printf("[Audio] Fade-in interrupted by stop\n")
 				return
 			default:
 				progress := float64(i) / float64(steps)
@@ -183,12 +180,6 @@ func (p *Player) FadeIn(durationMs int64) {
 					p.volumeCtrl.Silent = currentVol == 0
 				}
 				p.mutex.Unlock()
-
-				if i == 0 {
-					fmt.Printf("[Audio] Fade-in step 0: volume=%.2f dB=%.1f\n", currentVol, db)
-				} else if i == steps {
-					fmt.Printf("[Audio] Fade-in complete: volume=%.2f dB=%.1f\n", currentVol, db)
-				}
 
 				time.Sleep(50 * time.Millisecond)
 			}
@@ -217,7 +208,6 @@ func (p *Player) playbackLoop(files []string) {
 
 // playFile plays a single audio file
 func (p *Player) playFile(filename string) error {
-	fmt.Printf("[Audio] Opening file: %s\n", filename)
 	f, err := os.Open(filename)
 	if err != nil {
 		return err
@@ -229,7 +219,6 @@ func (p *Player) playFile(filename string) error {
 		return fmt.Errorf("failed to decode MP3: %w", err)
 	}
 	defer streamer.Close()
-	fmt.Printf("[Audio] Decoded MP3, sample rate: %v\n", format.SampleRate)
 
 	// Resample to speaker's sample rate if needed
 	resampled := beep.Resample(4, format.SampleRate, p.sampleRate, streamer)
@@ -250,7 +239,6 @@ func (p *Player) playFile(filename string) error {
 	}
 	p.currentFile = filename
 	p.mutex.Unlock()
-	fmt.Printf("[Audio] Starting playback at volume %.2f (%.1f dB)\n", p.volume, db)
 
 	// Create controller for pause/stop
 	p.ctrl = &beep.Ctrl{Streamer: p.volumeCtrl}
@@ -264,10 +252,8 @@ func (p *Player) playFile(filename string) error {
 	// Wait for playback to finish or stop signal
 	select {
 	case <-done:
-		fmt.Printf("[Audio] Playback finished naturally\n")
 		return nil
 	case <-p.stopChan:
-		fmt.Printf("[Audio] Playback stopped by request\n")
 		speaker.Clear()
 		return nil
 	}
