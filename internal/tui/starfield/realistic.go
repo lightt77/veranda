@@ -82,13 +82,13 @@ func (rs *RealisticStarfield) Twinkle() {
 			phase := rs.twinkleStates[key]
 
 			// Update phase - stars twinkle at different rates
-			// Brighter stars twinkle more noticeably
-			twinkleSpeed := 0.1 + (1.0-obj.Object.ApparentMag/10.0)*0.15
-			if twinkleSpeed < 0.05 {
-				twinkleSpeed = 0.05
+			// Brighter stars twinkle faster and more noticeably
+			twinkleSpeed := 0.15 + (1.0-obj.Object.ApparentMag/10.0)*0.25
+			if twinkleSpeed < 0.08 {
+				twinkleSpeed = 0.08
 			}
-			if twinkleSpeed > 0.3 {
-				twinkleSpeed = 0.3
+			if twinkleSpeed > 0.5 {
+				twinkleSpeed = 0.5
 			}
 
 			phase += twinkleSpeed
@@ -294,8 +294,8 @@ func GetObjectSymbol(obj CelestialObject, brightness float64, twinklePhase float
 	// Calculate effective brightness with twinkling for stars and galaxies
 	effectiveBrightness := brightness
 	if (obj.Type == ObjectTypeStar || obj.Type == ObjectTypeGalaxy) && twinklePhase > 0 {
-		// Twinkle effect: vary brightness by ±15%
-		twinkle := 0.85 + 0.3*twinklePhase
+		// Twinkle effect: vary brightness by ±35% for more noticeable effect
+		twinkle := 0.65 + 0.7*twinklePhase
 		effectiveBrightness = brightness * twinkle
 	}
 
@@ -328,8 +328,8 @@ func GetObjectSymbol(obj CelestialObject, brightness float64, twinklePhase float
 // GetTwinkleBrightness returns the brightness adjusted for twinkling
 func GetTwinkleBrightness(baseBrightness, twinklePhase float64, objType ObjectType) float64 {
 	if (objType == ObjectTypeStar || objType == ObjectTypeGalaxy) && twinklePhase > 0 {
-		// Twinkle effect: vary brightness by ±15%
-		twinkle := 0.85 + 0.3*twinklePhase
+		// Twinkle effect: vary brightness by ±35% for more noticeable effect
+		twinkle := 0.65 + 0.7*twinklePhase
 		return baseBrightness * twinkle
 	}
 	return baseBrightness
