@@ -25,6 +25,7 @@ func setupTestDB(t *testing.T) (*db.DB, func()) {
 
 	cleanup := func() {
 		database.Close()
+		// tempDir is automatically cleaned up by Go's testing framework
 	}
 
 	return database, cleanup

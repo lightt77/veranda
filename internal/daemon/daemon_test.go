@@ -56,6 +56,7 @@ func setupTestDaemon(t *testing.T) (*daemon.Server, *config.AppConfig, func()) {
 	cleanup := func() {
 		server.Stop()
 		database.Close()
+		// tempDir is automatically cleaned up by Go's testing framework
 	}
 
 	return server, cfg, cleanup
