@@ -2,6 +2,8 @@
 package config
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -33,6 +35,16 @@ const (
 	DatabaseFileName = "veranda.db"
 )
 
+// User config file
+const (
+	ConfigFileName = "config.json"
+)
+
+// Default user settings
+const (
+	DefaultTimerCompletionSound = "freesound_community-bell-98033.mp3"
+)
+
 // Config returns the full application configuration
 func Config() *AppConfig {
 	homeDir, _ := os.UserHomeDir()
@@ -60,4 +72,69 @@ type AppConfig struct {
 	SoundsDir    string
 	DatabasePath string
 	DaemonPort   int
+}
+
+// UserConfig holds user-editable configuration settings
+type UserConfig struct {
+	TimerCompletionSound string `json:"timer_completion_sound"`
+}
+
+// DefaultUserConfig returns the default user configuration
+func DefaultUserConfig() *UserConfig {
+	return &UserConfig{
+		TimerCompletionSound: DefaultTimerCompletionSound,
+	}
+}
+
+// LoadUserConfig loads the user configuration from disk
+// Returns default config if file doesn't exist or is invalid
+func LoadUserConfig(configDir string) *UserConfig {
+	configPath := filepath.Join(configDir, ConfigFileName)
+
+	// If file doesn't exist, return default config
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		return DefaultUserConfig()
+	}
+
+	// Read config file
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return DefaultUserConfig()
+	}
+
+	// Parse JSON
+	var cfg UserConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return DefaultUserConfig()
+	}
+
+	// Set defaults for empty values
+	if cfg.TimerCompletionSound == "" {
+		cfg.TimerCompletionSound = DefaultTimerCompletionSound
+	}
+
+	return &cfg
+}
+
+// Save persists the user configuration to disk
+func (c *UserConfig) Save(configDir string) error {
+	// Ensure config directory exists
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	configPath := filepath.Join(configDir, ConfigFileName)
+
+	// Marshal to JSON with indentation
+	data, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	// Write to file
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	return nil
 }
