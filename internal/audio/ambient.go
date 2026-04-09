@@ -23,10 +23,11 @@ type AmbientService struct {
 // NewAmbientService creates a new ambient sound service
 func NewAmbientService(
 	cfg *config.AppConfig,
+	configDir string,
 	timerService *service.TimerService,
 	stopwatchService *service.StopwatchService,
 ) (*AmbientService, error) {
-	player, err := NewPlayer(cfg)
+	player, err := NewPlayer(cfg, configDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create audio player: %w", err)
 	}
