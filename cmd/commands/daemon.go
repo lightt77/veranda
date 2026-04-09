@@ -7,7 +7,6 @@ import (
 	"syscall"
 
 	"github.com/lightt77/veranda/internal/audio"
-	"github.com/lightt77/veranda/internal/config"
 	"github.com/lightt77/veranda/internal/daemon"
 	"github.com/lightt77/veranda/internal/db"
 	"github.com/lightt77/veranda/internal/notify"
@@ -96,9 +95,6 @@ func runDaemon(cmd *cobra.Command, args []string) {
 	journalService := service.NewJournalService(journalRepo)
 	settingsService := service.NewSettingsService(settingsRepo)
 
-	// Load user configuration
-	userConfig := config.LoadUserConfig(cfg.DataDir)
-
 	// Initialize ambient sound service
 	var ambientService *audio.AmbientService
 	var audioPlayer *audio.Player
@@ -113,9 +109,9 @@ func runDaemon(cmd *cobra.Command, args []string) {
 		audioPlayer = ambientService.GetPlayer()
 	}
 
-	// Initialize notification service
+	// Initialize notification service (config will be reloaded from disk each time)
 	var notifier *notify.Notifier
-	notifyService := notify.NewService(cfg.AppName, audioPlayer, userConfig)
+	notifyService := notify.NewService(cfg.AppName, audioPlayer, cfg.DataDir)
 	if notify.IsSupported() {
 		notifier = notify.NewNotifier(notifyService, timerService)
 		notifier.Start()
