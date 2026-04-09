@@ -8,10 +8,16 @@ import (
 	"github.com/lightt77/veranda/internal/repository"
 )
 
+// LapNotifier interface for lap notifications
+type LapNotifier interface {
+	StopLapNotification(stopwatchName string, lapNumber int, lapDurationMs int64)
+}
+
 // StopwatchService handles stopwatch business logic
 type StopwatchService struct {
 	stopwatchRepo    *repository.StopwatchRepository
 	stopwatchLapRepo *repository.StopwatchLapRepository
+	lapNotifier      LapNotifier
 }
 
 // NewStopwatchService creates a new stopwatch service
@@ -23,6 +29,11 @@ func NewStopwatchService(
 		stopwatchRepo:    stopwatchRepo,
 		stopwatchLapRepo: stopwatchLapRepo,
 	}
+}
+
+// SetLapNotifier sets the lap notifier
+func (s *StopwatchService) SetLapNotifier(notifier LapNotifier) {
+	s.lapNotifier = notifier
 }
 
 // Create creates a new stopwatch
@@ -126,6 +137,11 @@ func (s *StopwatchService) Lap(id int64) (*models.Stopwatch, *models.StopwatchLa
 
 	if err := s.stopwatchLapRepo.Create(lap); err != nil {
 		return nil, nil, fmt.Errorf("failed to create lap: %w", err)
+	}
+
+	// Notify about the lap
+	if s.lapNotifier != nil {
+		s.lapNotifier.StopLapNotification(stopwatch.Label, lapNumber, lapDuration)
 	}
 
 	return stopwatch, lap, nil
