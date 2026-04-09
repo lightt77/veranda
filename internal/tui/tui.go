@@ -64,9 +64,10 @@ type Model struct {
 	// Preferences
 	userConfig          *config.UserConfig
 	configDir           string
-	editingSoundFile    bool
-	soundFileEditBuffer string
 	settingsMessage     string
+	selectingSoundFile  bool // dropdown mode for selecting sound file
+	availableSoundFiles []string
+	selectedSoundIdx    int
 }
 
 // Catppuccin Mocha Color Palette
@@ -180,19 +181,24 @@ func New(port int, citiesRepo *repository.CitiesRepository) Model {
 	// Load user config
 	homeDir, _ := os.UserHomeDir()
 	configDir := filepath.Join(homeDir, config.DefaultDataDir)
+	soundsDir := filepath.Join(homeDir, config.DefaultSoundsDir)
 	userConfig := config.LoadUserConfig(configDir)
 
+	// Load available sound files
+	availableSounds := loadAvailableSoundFiles(soundsDir)
+
 	return Model{
-		client:             daemon.NewClient(port),
-		activeTab:          0,
-		lastUpdate:         time.Now(),
-		starfieldMode:      ModeRandom, // Default to random mode
-		randomStarfield:    starfield.NewRandomStarfield(),
-		realisticStarfield: starfield.NewRealisticStarfield(observer),
-		citiesRepo:         citiesRepo,
-		currentCity:        defaultCity,
-		userConfig:         userConfig,
-		configDir:          configDir,
+		client:              daemon.NewClient(port),
+		activeTab:           0,
+		lastUpdate:          time.Now(),
+		starfieldMode:       ModeRandom, // Default to random mode
+		randomStarfield:     starfield.NewRandomStarfield(),
+		realisticStarfield:  starfield.NewRealisticStarfield(observer),
+		citiesRepo:          citiesRepo,
+		currentCity:         defaultCity,
+		userConfig:          userConfig,
+		configDir:           configDir,
+		availableSoundFiles: availableSounds,
 	}
 }
 
@@ -312,11 +318,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "tab", "right":
 			m.activeTab = (m.activeTab + 1) % 3
 			m.selectedIdx = 0
-			m.editingSoundFile = false
+			m.selectingSoundFile = false
 		case "shift+tab", "left":
 			m.activeTab = (m.activeTab - 1 + 3) % 3
 			m.selectedIdx = 0
-			m.editingSoundFile = false
+			m.selectingSoundFile = false
 		case "up", "k":
 			m.selectedIdx = max(0, m.selectedIdx-1)
 		case "down", "j":
@@ -378,38 +384,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showObjectNames = !m.showObjectNames
 		case "e":
 			// Edit timer completion sound file (only in preferences tab)
-			if m.activeTab == 2 && !m.editingSoundFile {
-				m.editingSoundFile = true
-				m.soundFileEditBuffer = m.userConfig.TimerCompletionSound
+			if m.activeTab == 2 && !m.selectingSoundFile {
+				m.selectingSoundFile = true
+				// Find current sound file index
+				m.selectedSoundIdx = 0
+				for i, f := range m.availableSoundFiles {
+					if f == m.userConfig.TimerCompletionSound {
+						m.selectedSoundIdx = i
+						break
+					}
+				}
 			}
 		}
 
-		// Handle text input when editing sound file
-		if m.editingSoundFile {
+		// Handle dropdown navigation when selecting sound file
+		if m.selectingSoundFile {
 			switch msg.String() {
 			case "esc":
-				m.editingSoundFile = false
-				m.soundFileEditBuffer = ""
+				m.selectingSoundFile = false
 			case "enter":
-				// Save the new sound file name
-				if m.soundFileEditBuffer != "" {
-					m.userConfig.TimerCompletionSound = m.soundFileEditBuffer
+				// Save the selected sound file
+				if m.selectedSoundIdx < len(m.availableSoundFiles) {
+					m.userConfig.TimerCompletionSound = m.availableSoundFiles[m.selectedSoundIdx]
 					if err := m.userConfig.Save(m.configDir); err != nil {
 						m.settingsMessage = fmt.Sprintf("Error saving: %v", err)
 					} else {
 						m.settingsMessage = "Settings saved!"
 					}
 				}
-				m.editingSoundFile = false
-				m.soundFileEditBuffer = ""
-			case "backspace":
-				if len(m.soundFileEditBuffer) > 0 {
-					m.soundFileEditBuffer = m.soundFileEditBuffer[:len(m.soundFileEditBuffer)-1]
+				m.selectingSoundFile = false
+			case "up", "k":
+				if m.selectedSoundIdx > 0 {
+					m.selectedSoundIdx--
 				}
-			default:
-				// Add character to buffer (only single printable characters)
-				if len(msg.String()) == 1 {
-					m.soundFileEditBuffer += msg.String()
+			case "down", "j":
+				if m.selectedSoundIdx < len(m.availableSoundFiles)-1 {
+					m.selectedSoundIdx++
 				}
 			}
 		}
@@ -807,10 +817,18 @@ func (m Model) renderContent() string {
 		fmt.Sprintf("Mode: %s [%s] | Loc: %s [%s] | Names: %s [%s] | ", modeText, lipgloss.NewStyle().Foreground(mauve).Render("m"), locationText, lipgloss.NewStyle().Foreground(mauve).Render("l"), namesText, lipgloss.NewStyle().Foreground(mauve).Render("n")),
 	)
 
-	// Help - different based on active tab
+	// Help - different based on active tab and mode
 	var helpText string
-	if m.activeTab == 2 {
-		// Preferences tab help
+	if m.activeTab == 2 && m.selectingSoundFile {
+		// Sound file dropdown selection mode
+		helpText = lipgloss.NewStyle().Foreground(mauve).Render("↑↓") +
+			lipgloss.NewStyle().Foreground(overlay0).Render("/jk:select ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("enter") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":confirm ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("esc") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":cancel")
+	} else if m.activeTab == 2 {
+		// Preferences tab help (normal mode)
 		helpText = lipgloss.NewStyle().Foreground(mauve).Render("e") +
 			lipgloss.NewStyle().Foreground(overlay0).Render(":edit ") +
 			lipgloss.NewStyle().Foreground(mauve).Render("tab") +
@@ -1020,18 +1038,48 @@ func (m Model) renderPreferences() string {
 	// Timer completion sound setting
 	content += "Timer Completion Sound\n"
 
-	if m.editingSoundFile {
-		// Show input field when editing
-		soundFile := m.soundFileEditBuffer
-		if soundFile == "" {
-			soundFile = " "
+	if m.selectingSoundFile {
+		// Show dropdown with available sound files
+		content += lipgloss.NewStyle().Foreground(mauve).Render("Select a sound file:") + "\n\n"
+
+		if len(m.availableSoundFiles) == 0 {
+			content += lipgloss.NewStyle().Foreground(red).Render("  No MP3 files found in sounds directory") + "\n"
+			content += lipgloss.NewStyle().Foreground(overlay0).Render("  Place .mp3 files in ~/.veranda/sounds/") + "\n"
+		} else {
+			// Show up to 5 files at a time with scrolling
+			maxDisplay := 5
+			startIdx := 0
+			if m.selectedSoundIdx >= maxDisplay {
+				startIdx = m.selectedSoundIdx - maxDisplay + 1
+			}
+			endIdx := startIdx + maxDisplay
+			if endIdx > len(m.availableSoundFiles) {
+				endIdx = len(m.availableSoundFiles)
+			}
+
+			for i := startIdx; i < endIdx; i++ {
+				prefix := "  "
+				if i == m.selectedSoundIdx {
+					prefix = selectedStyle.Render("> ")
+				}
+				fileName := m.availableSoundFiles[i]
+				// Highlight current selection
+				if i == m.selectedSoundIdx {
+					fileName = lipgloss.NewStyle().Foreground(lavender).Bold(true).Render(fileName)
+				} else {
+					fileName = lipgloss.NewStyle().Foreground(text).Render(fileName)
+				}
+				content += prefix + fileName + "\n"
+			}
+
+			// Show count if there are more files
+			if len(m.availableSoundFiles) > maxDisplay {
+				content += lipgloss.NewStyle().Foreground(overlay0).Render(
+					fmt.Sprintf("  (%d more files)", len(m.availableSoundFiles)-maxDisplay)) + "\n"
+			}
 		}
-		inputStyle := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(mauve).
-			Padding(0, 1)
-		content += inputStyle.Render(soundFile) + "\n"
-		content += lipgloss.NewStyle().Foreground(overlay0).Render("       enter:save  esc:cancel") + "\n"
+
+		content += "\n" + lipgloss.NewStyle().Foreground(overlay0).Render("↑↓:select  enter:confirm  esc:cancel") + "\n"
 	} else {
 		// Show current value with edit hint
 		soundFile := m.userConfig.TimerCompletionSound
@@ -1275,4 +1323,25 @@ func renderProgressBar(progress float64, width int) string {
 	}
 
 	return progressBarStyle.Render(filledBar) + progressBarEmptyStyle.Render(emptyBar)
+}
+
+// loadAvailableSoundFiles scans the sounds directory and returns a list of MP3 files
+func loadAvailableSoundFiles(soundsDir string) []string {
+	entries, err := os.ReadDir(soundsDir)
+	if err != nil {
+		return []string{}
+	}
+
+	var files []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasSuffix(strings.ToLower(name), ".mp3") {
+			files = append(files, name)
+		}
+	}
+
+	return files
 }
