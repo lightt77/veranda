@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/lightt77/veranda/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -12,8 +13,9 @@ var tuiCmd = &cobra.Command{
 	Short: "Launch the Terminal User Interface",
 	Long:  `Launch an interactive TUI for managing timers, stopwatches, and viewing activity.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("TUI not yet implemented")
-		fmt.Println("Coming soon: Interactive terminal interface with Bubble Tea")
+		if err := tui.Run(getConfig().DaemonPort); err != nil {
+			fmt.Printf("Error running TUI: %v\n", err)
+		}
 	},
 }
 
