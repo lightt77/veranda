@@ -54,6 +54,9 @@ type Model struct {
 	cityPickerSearch string
 	cityPickerCities []repository.City
 	cityPickerIndex  int
+
+	// Object name display toggle
+	showObjectNames bool // Toggle to show/hide celestial object names
 }
 
 // Catppuccin Mocha Color Palette
@@ -349,6 +352,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cityPickerSearch = ""
 				m.loadAllCities()
 			}
+		case "n":
+			// Toggle showing celestial object names
+			m.showObjectNames = !m.showObjectNames
 		}
 
 	case tickMsg:
@@ -506,6 +512,9 @@ func (m Model) renderRealisticStarfield(starAreaHeight int) string {
 	// Get visible objects
 	objects := m.realisticStarfield.GetVisibleObjects()
 
+	// Track which positions have objects to avoid overlapping names
+	occupiedPositions := make(map[[2]int]bool)
+
 	// Render each object
 	for _, obj := range objects {
 		if obj.ScreenY >= 0 && obj.ScreenY < starAreaHeight &&
@@ -530,6 +539,45 @@ func (m Model) renderRealisticStarfield(starAreaHeight int) string {
 					after = row[obj.ScreenX+len(symbol):]
 				}
 				rows[obj.ScreenY] = before + styled + after
+				occupiedPositions[[2]int{obj.ScreenX, obj.ScreenY}] = true
+			}
+		}
+	}
+
+	// Render object names if enabled
+	if m.showObjectNames {
+		for _, obj := range objects {
+			if obj.ScreenY >= 0 && obj.ScreenY < starAreaHeight &&
+				obj.ScreenX >= 0 && obj.ScreenX < m.width &&
+				obj.Brightness > 0.3 { // Only show names for brighter objects
+
+				// Place name to the right of the object
+				nameX := obj.ScreenX + 2
+				nameY := obj.ScreenY
+
+				// Check if there's enough space and position isn't occupied
+				if nameX < m.width-5 && nameY < starAreaHeight && !occupiedPositions[[2]int{nameX, nameY}] {
+					// Get shortened name (first word only for space)
+					name := obj.Object.Name
+					if len(name) > 8 {
+						name = name[:7] + "."
+					}
+
+					// Render name with subtle color
+					nameStyle := lipgloss.NewStyle().Foreground(overlay0)
+					styledName := nameStyle.Render(name)
+
+					// Place name in row
+					row := rows[nameY]
+					if nameX+len(name) < len(row) {
+						before := row[:nameX]
+						after := ""
+						if nameX+len(name) < len(row) {
+							after = row[nameX+len(name):]
+						}
+						rows[nameY] = before + styledName + after
+					}
+				}
 			}
 		}
 	}
@@ -629,7 +677,7 @@ func (m Model) renderContent() string {
 		s += leftPad + strings.ReplaceAll(m.renderStopwatches(), "\n", "\n"+leftPad)
 	}
 
-	// Status line with mode and location
+	// Status line with mode, location, and names toggle
 	modeText := "random"
 	if m.starfieldMode == ModeRealistic {
 		modeText = "realistic"
@@ -640,8 +688,13 @@ func (m Model) renderContent() string {
 		locationText = m.currentCity.City
 	}
 
+	namesText := "off"
+	if m.showObjectNames {
+		namesText = "on"
+	}
+
 	statusLine := lipgloss.NewStyle().Foreground(overlay0).Render(
-		fmt.Sprintf("Mode: %s [%s] | Location: %s [%s] | ", modeText, lipgloss.NewStyle().Foreground(mauve).Render("m"), locationText, lipgloss.NewStyle().Foreground(mauve).Render("l")),
+		fmt.Sprintf("Mode: %s [%s] | Loc: %s [%s] | Names: %s [%s] | ", modeText, lipgloss.NewStyle().Foreground(mauve).Render("m"), locationText, lipgloss.NewStyle().Foreground(mauve).Render("l"), namesText, lipgloss.NewStyle().Foreground(mauve).Render("n")),
 	)
 
 	// Help
