@@ -40,6 +40,7 @@ type AmbientStream struct {
 	ctrl       *beep.Ctrl
 	volumeCtrl *effects.Volume
 	stopChan   chan struct{}
+	stopOnce   sync.Once // ensures stopChan is closed only once
 	wg         sync.WaitGroup
 	isPlaying  bool
 	isTest     bool // true if this is a test playback (non-looping)
@@ -256,10 +257,12 @@ func (p *Player) stopStreamLocked(stream *AmbientStream) {
 	if !stream.isPlaying {
 		return
 	}
-	close(stream.stopChan)
+	// Use stopOnce to ensure stopChan is only closed once
+	stream.stopOnce.Do(func() {
+		close(stream.stopChan)
+	})
 	stream.wg.Wait()
 	stream.isPlaying = false
-	stream.stopChan = make(chan struct{})
 }
 
 // FadeIn gradually increases volume for all streams from 0 to target
