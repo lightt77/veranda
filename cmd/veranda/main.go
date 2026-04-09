@@ -8,6 +8,7 @@ import (
 	"github.com/lightt77/veranda/internal/config"
 	"github.com/lightt77/veranda/internal/daemon"
 	"github.com/lightt77/veranda/internal/db"
+	"github.com/lightt77/veranda/internal/notify"
 	"github.com/lightt77/veranda/internal/repository"
 	"github.com/lightt77/veranda/internal/service"
 )
@@ -59,6 +60,16 @@ func main() {
 		if err := ambientService.Start(); err != nil {
 			fmt.Printf("Note: Failed to start ambient monitoring: %v\n", err)
 		}
+	}
+
+	// Initialize notification service
+	notifyService := notify.NewService(cfg.AppName)
+	if notify.IsSupported() {
+		notifier := notify.NewNotifier(notifyService, timerService)
+		notifier.Start()
+		fmt.Println("Desktop notifications: enabled")
+	} else {
+		fmt.Printf("Desktop notifications: not supported on %s\n", notify.GetPlatform())
 	}
 
 	// Initialize and start daemon server
