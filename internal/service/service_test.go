@@ -37,6 +37,7 @@ func setupTestServices(t *testing.T) (*service.TimerService, *service.StopwatchS
 
 	cleanup := func() {
 		database.Close()
+		// tempDir is automatically cleaned up by Go's testing framework
 	}
 
 	return timerService, stopwatchService, journalService, settingsService, cleanup
