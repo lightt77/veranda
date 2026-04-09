@@ -62,6 +62,7 @@ func (n *Notifier) monitorTimers() {
 				// Check if we already notified for this timer
 				if !notifiedTimers[timer.ID] {
 					n.notifyService.TimerCompletion(timer.Label)
+					n.notifyService.PlayTimerCompletionSound()
 					notifiedTimers[timer.ID] = true
 				}
 
