@@ -532,14 +532,18 @@ func (m Model) renderRealisticStarfield(starAreaHeight int) string {
 			// Get color
 			color := starfield.GetObjectColor(obj.Object, obj.Brightness)
 
-			// Place symbol in grid (single character)
+			// Place symbol in grid (single character/rune)
 			if len(symbol) > 0 {
-				grid[obj.ScreenY][obj.ScreenX] = Cell{
-					char:  string(symbol[0]),
-					color: color,
-					isSet: true,
+				// Convert to runes to handle multi-byte UTF-8 characters properly
+				runes := []rune(symbol)
+				if len(runes) > 0 {
+					grid[obj.ScreenY][obj.ScreenX] = Cell{
+						char:  string(runes[0]),
+						color: color,
+						isSet: true,
+					}
+					occupiedPositions[[2]int{obj.ScreenX, obj.ScreenY}] = true
 				}
-				occupiedPositions[[2]int{obj.ScreenX, obj.ScreenY}] = true
 			}
 		}
 	}
@@ -573,13 +577,15 @@ func (m Model) renderRealisticStarfield(starAreaHeight int) string {
 
 					if canPlace {
 						// Place name characters in grid
-						for i, ch := range name {
-							if nameX+i < m.width {
-								grid[nameY][nameX+i] = Cell{
+						colOffset := 0
+						for _, ch := range name {
+							if nameX+colOffset < m.width {
+								grid[nameY][nameX+colOffset] = Cell{
 									char:  string(ch),
 									color: overlay0,
 									isSet: true,
 								}
+								colOffset++
 							}
 						}
 					}
