@@ -64,6 +64,7 @@ type Model struct {
 	// Preferences
 	userConfig          *config.UserConfig
 	configDir           string
+	chimesDir           string
 	settingsMessage     string
 	selectingSoundFile  bool // dropdown mode for selecting sound file
 	availableSoundFiles []string
@@ -181,11 +182,11 @@ func New(port int, citiesRepo *repository.CitiesRepository) Model {
 	// Load user config
 	homeDir, _ := os.UserHomeDir()
 	configDir := filepath.Join(homeDir, config.DefaultDataDir)
-	soundsDir := filepath.Join(homeDir, config.DefaultSoundsDir)
+	chimesDir := filepath.Join(homeDir, config.DefaultChimesDir)
 	userConfig := config.LoadUserConfig(configDir)
 
-	// Load available sound files
-	availableSounds := loadAvailableSoundFiles(soundsDir)
+	// Load available sound files from chimes directory
+	availableSounds := loadAvailableSoundFiles(chimesDir)
 
 	return Model{
 		client:              daemon.NewClient(port),
@@ -198,6 +199,7 @@ func New(port int, citiesRepo *repository.CitiesRepository) Model {
 		currentCity:         defaultCity,
 		userConfig:          userConfig,
 		configDir:           configDir,
+		chimesDir:           chimesDir,
 		availableSoundFiles: availableSounds,
 	}
 }
@@ -1043,8 +1045,8 @@ func (m Model) renderPreferences() string {
 		content += lipgloss.NewStyle().Foreground(mauve).Render("Select a sound file:") + "\n\n"
 
 		if len(m.availableSoundFiles) == 0 {
-			content += lipgloss.NewStyle().Foreground(red).Render("  No MP3 files found in sounds directory") + "\n"
-			content += lipgloss.NewStyle().Foreground(overlay0).Render("  Place .mp3 files in ~/.veranda/sounds/") + "\n"
+			content += lipgloss.NewStyle().Foreground(red).Render("  No MP3 files found in chimes directory") + "\n"
+			content += lipgloss.NewStyle().Foreground(overlay0).Render("  Place .mp3 files in ~/.veranda/sounds/chimes/") + "\n"
 		} else {
 			// Show up to 5 files at a time with scrolling
 			maxDisplay := 5
