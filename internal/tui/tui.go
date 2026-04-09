@@ -3,11 +3,14 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/lightt77/veranda/internal/config"
 	"github.com/lightt77/veranda/internal/daemon"
 	"github.com/lightt77/veranda/internal/repository"
 	"github.com/lightt77/veranda/internal/tui/starfield"
@@ -32,7 +35,7 @@ type Model struct {
 	client        *daemon.Client
 	timers        []map[string]interface{}
 	stopwatches   []map[string]interface{}
-	activeTab     int  // 0 = timers, 1 = stopwatches
+	activeTab     int  // 0 = timers, 1 = stopwatches, 2 = preferences
 	showCompleted bool // toggle to show/hide completed timers
 	selectedIdx   int  // currently selected item index
 	width         int
@@ -57,6 +60,13 @@ type Model struct {
 
 	// Object name display toggle
 	showObjectNames bool // Toggle to show/hide celestial object names
+
+	// Preferences
+	userConfig          *config.UserConfig
+	configDir           string
+	editingSoundFile    bool
+	soundFileEditBuffer string
+	settingsMessage     string
 }
 
 // Catppuccin Mocha Color Palette
@@ -167,6 +177,11 @@ func New(port int, citiesRepo *repository.CitiesRepository) Model {
 		observer = starfield.MumbaiObserver()
 	}
 
+	// Load user config
+	homeDir, _ := os.UserHomeDir()
+	configDir := filepath.Join(homeDir, config.DefaultDataDir)
+	userConfig := config.LoadUserConfig(configDir)
+
 	return Model{
 		client:             daemon.NewClient(port),
 		activeTab:          0,
@@ -176,6 +191,8 @@ func New(port int, citiesRepo *repository.CitiesRepository) Model {
 		realisticStarfield: starfield.NewRealisticStarfield(observer),
 		citiesRepo:         citiesRepo,
 		currentCity:        defaultCity,
+		userConfig:         userConfig,
+		configDir:          configDir,
 	}
 }
 
@@ -293,11 +310,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "tab", "right":
-			m.activeTab = (m.activeTab + 1) % 2
+			m.activeTab = (m.activeTab + 1) % 3
 			m.selectedIdx = 0
+			m.editingSoundFile = false
 		case "shift+tab", "left":
-			m.activeTab = (m.activeTab - 1 + 2) % 2
+			m.activeTab = (m.activeTab - 1 + 3) % 3
 			m.selectedIdx = 0
+			m.editingSoundFile = false
 		case "up", "k":
 			m.selectedIdx = max(0, m.selectedIdx-1)
 		case "down", "j":
@@ -357,6 +376,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "n":
 			// Toggle showing celestial object names
 			m.showObjectNames = !m.showObjectNames
+		case "e":
+			// Edit timer completion sound file (only in preferences tab)
+			if m.activeTab == 2 && !m.editingSoundFile {
+				m.editingSoundFile = true
+				m.soundFileEditBuffer = m.userConfig.TimerCompletionSound
+			}
+		}
+
+		// Handle text input when editing sound file
+		if m.editingSoundFile {
+			switch msg.String() {
+			case "esc":
+				m.editingSoundFile = false
+				m.soundFileEditBuffer = ""
+			case "enter":
+				// Save the new sound file name
+				if m.soundFileEditBuffer != "" {
+					m.userConfig.TimerCompletionSound = m.soundFileEditBuffer
+					if err := m.userConfig.Save(m.configDir); err != nil {
+						m.settingsMessage = fmt.Sprintf("Error saving: %v", err)
+					} else {
+						m.settingsMessage = "Settings saved!"
+					}
+				}
+				m.editingSoundFile = false
+				m.soundFileEditBuffer = ""
+			case "backspace":
+				if len(m.soundFileEditBuffer) > 0 {
+					m.soundFileEditBuffer = m.soundFileEditBuffer[:len(m.soundFileEditBuffer)-1]
+				}
+			default:
+				// Add character to buffer (only single printable characters)
+				if len(msg.String()) == 1 {
+					m.soundFileEditBuffer += msg.String()
+				}
+			}
 		}
 
 	case tickMsg:
@@ -709,22 +764,27 @@ func (m Model) renderContent() string {
 	// Tabs
 	timersTab := inactiveTabStyle.Render("Timers [t]")
 	stopwatchesTab := inactiveTabStyle.Render("Stopwatches [s]")
+	prefsTab := inactiveTabStyle.Render("Prefs [e]")
 
 	if m.activeTab == 0 {
 		timersTab = activeTabStyle.Render("Timers [t]")
-	} else {
+	} else if m.activeTab == 1 {
 		stopwatchesTab = activeTabStyle.Render("Stopwatches [s]")
+	} else {
+		prefsTab = activeTabStyle.Render("Prefs [e]")
 	}
 
-	s += leftPad + lipgloss.JoinHorizontal(lipgloss.Left, timersTab, stopwatchesTab) + "\n"
+	s += leftPad + lipgloss.JoinHorizontal(lipgloss.Left, timersTab, stopwatchesTab, prefsTab) + "\n"
 
 	// Content
 	if m.err != nil {
 		s += leftPad + fmt.Sprintf("Error: %v\n", m.err)
 	} else if m.activeTab == 0 {
 		s += leftPad + strings.ReplaceAll(m.renderTimers(), "\n", "\n"+leftPad)
-	} else {
+	} else if m.activeTab == 1 {
 		s += leftPad + strings.ReplaceAll(m.renderStopwatches(), "\n", "\n"+leftPad)
+	} else {
+		s += leftPad + strings.ReplaceAll(m.renderPreferences(), "\n", "\n"+leftPad)
 	}
 
 	// Status line with mode, location, and names toggle
@@ -747,21 +807,33 @@ func (m Model) renderContent() string {
 		fmt.Sprintf("Mode: %s [%s] | Loc: %s [%s] | Names: %s [%s] | ", modeText, lipgloss.NewStyle().Foreground(mauve).Render("m"), locationText, lipgloss.NewStyle().Foreground(mauve).Render("l"), namesText, lipgloss.NewStyle().Foreground(mauve).Render("n")),
 	)
 
-	// Help
-	helpText := lipgloss.NewStyle().Foreground(mauve).Render("↑↓") +
-		lipgloss.NewStyle().Foreground(overlay0).Render("/jk:select ") +
-		lipgloss.NewStyle().Foreground(mauve).Render("space/p") +
-		lipgloss.NewStyle().Foreground(overlay0).Render(":pause ") +
-		lipgloss.NewStyle().Foreground(mauve).Render("d") +
-		lipgloss.NewStyle().Foreground(overlay0).Render(":delete ") +
-		lipgloss.NewStyle().Foreground(mauve).Render("tab") +
-		lipgloss.NewStyle().Foreground(overlay0).Render(":switch ") +
-		lipgloss.NewStyle().Foreground(mauve).Render("t/s") +
-		lipgloss.NewStyle().Foreground(overlay0).Render(":new ") +
-		lipgloss.NewStyle().Foreground(mauve).Render("r") +
-		lipgloss.NewStyle().Foreground(overlay0).Render(":refresh ") +
-		lipgloss.NewStyle().Foreground(mauve).Render("q") +
-		lipgloss.NewStyle().Foreground(overlay0).Render(":quit")
+	// Help - different based on active tab
+	var helpText string
+	if m.activeTab == 2 {
+		// Preferences tab help
+		helpText = lipgloss.NewStyle().Foreground(mauve).Render("e") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":edit ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("tab") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":switch ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("q") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":quit")
+	} else {
+		// Timer/stopwatch tab help
+		helpText = lipgloss.NewStyle().Foreground(mauve).Render("↑↓") +
+			lipgloss.NewStyle().Foreground(overlay0).Render("/jk:select ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("space/p") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":pause ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("d") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":delete ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("tab") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":switch ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("t/s") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":new ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("r") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":refresh ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("q") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":quit")
+	}
 
 	s += leftPad + statusLine + helpText + "\n"
 
@@ -933,6 +1005,43 @@ func (m Model) renderStopwatches() string {
 			elapsedStr,
 			statusStyle.Render(status),
 		)
+	}
+
+	return content
+}
+
+// renderPreferences renders the preferences/settings page
+func (m Model) renderPreferences() string {
+	var content string
+
+	// Title
+	content += "Settings\n\n"
+
+	// Timer completion sound setting
+	content += "Timer Completion Sound\n"
+
+	if m.editingSoundFile {
+		// Show input field when editing
+		soundFile := m.soundFileEditBuffer
+		if soundFile == "" {
+			soundFile = " "
+		}
+		inputStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(mauve).
+			Padding(0, 1)
+		content += inputStyle.Render(soundFile) + "\n"
+		content += lipgloss.NewStyle().Foreground(overlay0).Render("       enter:save  esc:cancel") + "\n"
+	} else {
+		// Show current value with edit hint
+		soundFile := m.userConfig.TimerCompletionSound
+		content += lipgloss.NewStyle().Foreground(lavender).Render(soundFile) + "\n"
+		content += lipgloss.NewStyle().Foreground(overlay0).Render("       [e]dit") + "\n"
+	}
+
+	// Show settings message if any
+	if m.settingsMessage != "" {
+		content += "\n" + lipgloss.NewStyle().Foreground(green).Render(m.settingsMessage) + "\n"
 	}
 
 	return content
