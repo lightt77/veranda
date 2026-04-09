@@ -7,7 +7,7 @@ import (
 )
 
 func TestNewService(t *testing.T) {
-	service := notify.NewService("test-app")
+	service := notify.NewService("test-app", nil, "/tmp/test-config")
 	if service == nil {
 		t.Fatal("Expected service to be created")
 	}
@@ -18,7 +18,7 @@ func TestNewService(t *testing.T) {
 }
 
 func TestSetEnabled(t *testing.T) {
-	service := notify.NewService("test-app")
+	service := notify.NewService("test-app", nil, "/tmp/test-config")
 
 	// Disable
 	service.SetEnabled(false)
@@ -34,7 +34,7 @@ func TestSetEnabled(t *testing.T) {
 }
 
 func TestNotifyDisabled(t *testing.T) {
-	service := notify.NewService("test-app")
+	service := notify.NewService("test-app", nil, "/tmp/test-config")
 	service.SetEnabled(false)
 
 	// Should not error when disabled
@@ -72,7 +72,7 @@ func TestIsSupported(t *testing.T) {
 }
 
 func TestNotifyf(t *testing.T) {
-	service := notify.NewService("test-app")
+	service := notify.NewService("test-app", nil, "/tmp/test-config")
 	service.SetEnabled(false) // Disable to avoid actual notifications during test
 
 	// Should not error with formatting
@@ -83,7 +83,7 @@ func TestNotifyf(t *testing.T) {
 }
 
 func TestTimerCompletion(t *testing.T) {
-	service := notify.NewService("test-app")
+	service := notify.NewService("test-app", nil, "/tmp/test-config")
 	service.SetEnabled(false)
 
 	err := service.TimerCompletion("Pomodoro Timer")
@@ -93,7 +93,7 @@ func TestTimerCompletion(t *testing.T) {
 }
 
 func TestStopwatchLap(t *testing.T) {
-	service := notify.NewService("test-app")
+	service := notify.NewService("test-app", nil, "/tmp/test-config")
 	service.SetEnabled(false)
 
 	err := service.StopwatchLap("Workout", 3, "01:45")
@@ -103,7 +103,7 @@ func TestStopwatchLap(t *testing.T) {
 }
 
 func TestDaemonStarted(t *testing.T) {
-	service := notify.NewService("test-app")
+	service := notify.NewService("test-app", nil, "/tmp/test-config")
 	service.SetEnabled(false)
 
 	err := service.DaemonStarted()
