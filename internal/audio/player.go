@@ -25,6 +25,7 @@ type Player struct {
 	volume      float64
 	isPlaying   bool
 	isFading    bool
+	isFadeStop  bool // true when stopping after a fade-out
 	currentFile string
 	ctrl        *beep.Ctrl
 	volumeCtrl  *effects.Volume
@@ -61,6 +62,72 @@ func (p *Player) IsPlaying() bool {
 	p.mutex.RLock()
 	defer p.mutex.RUnlock()
 	return p.isPlaying
+}
+
+// IsFading returns whether audio is currently fading in or out
+func (p *Player) IsFading() bool {
+	p.mutex.RLock()
+	defer p.mutex.RUnlock()
+	return p.isFading
+}
+
+// StartFadeOut starts fading out the volume and stops playback after fade completes
+func (p *Player) StartFadeOut(durationMs int64) {
+	p.mutex.Lock()
+	if !p.isPlaying || p.isFading {
+		p.mutex.Unlock()
+		return
+	}
+	p.isFading = true
+	p.isFadeStop = true
+	p.mutex.Unlock()
+
+	go func() {
+		p.fadeOut(durationMs)
+		// After fade out completes, signal stop (volume is already 0)
+		p.stopAfterFade()
+		p.mutex.Lock()
+		p.isFading = false
+		p.isFadeStop = false
+		p.mutex.Unlock()
+	}()
+}
+
+// stopAfterFade signals playback to stop after fade-out (volume already at 0)
+func (p *Player) stopAfterFade() {
+	p.mutex.Lock()
+	if !p.isPlaying {
+		p.mutex.Unlock()
+		return
+	}
+	p.mutex.Unlock()
+
+	close(p.stopChan)
+	p.wg.Wait()
+
+	p.mutex.Lock()
+	p.isPlaying = false
+	p.stopChan = make(chan struct{})
+	p.mutex.Unlock()
+}
+
+// stopImmediately stops playback without fade out
+func (p *Player) stopImmediately() {
+	p.mutex.Lock()
+	if !p.isPlaying {
+		p.mutex.Unlock()
+		return
+	}
+	p.isFadeStop = false
+	p.mutex.Unlock()
+
+	close(p.stopChan)
+	p.wg.Wait()
+
+	p.mutex.Lock()
+	p.isPlaying = false
+	p.stopChan = make(chan struct{})
+	p.mutex.Unlock()
 }
 
 // GetVolume returns the current volume (0.0 to 1.0)
@@ -130,6 +197,7 @@ func (p *Player) Stop(fadeOutMs int64) {
 	}
 
 	p.isFading = true
+	p.isFadeStop = fadeOutMs > 0
 	p.mutex.Unlock()
 
 	if fadeOutMs > 0 {
@@ -142,6 +210,7 @@ func (p *Player) Stop(fadeOutMs int64) {
 	p.mutex.Lock()
 	p.isPlaying = false
 	p.isFading = false
+	p.isFadeStop = false
 	p.stopChan = make(chan struct{})
 	p.mutex.Unlock()
 }
@@ -222,14 +291,29 @@ func (p *Player) playFile(filename string) error {
 	// Resample to speaker's sample rate if needed
 	resampled := beep.Resample(4, format.SampleRate, p.sampleRate, streamer)
 
-	// Update current file
+	// Create volume control wrapper
 	p.mutex.Lock()
+	volCtrl := &effects.Volume{
+		Streamer: resampled,
+		Base:     2,
+		Volume:   0, // Start silent for fade-in
+		Silent:   true,
+	}
+	p.volumeCtrl = volCtrl
+	targetVol := p.volume
 	p.currentFile = filename
 	p.mutex.Unlock()
 
-	// Play with callback when done - NO Volume wrapper for now
+	// Set initial volume
+	if targetVol > 0 {
+		db := 20 * math.Log10(targetVol)
+		volCtrl.Volume = db
+		volCtrl.Silent = false
+	}
+
+	// Play with volume control
 	done := make(chan struct{})
-	speaker.Play(beep.Seq(resampled, beep.Callback(func() {
+	speaker.Play(beep.Seq(volCtrl, beep.Callback(func() {
 		streamer.Close()
 		f.Close()
 		close(done)
@@ -240,7 +324,18 @@ func (p *Player) playFile(filename string) error {
 	case <-done:
 		return nil
 	case <-p.stopChan:
-		speaker.Clear()
+		p.mutex.RLock()
+		isFadeStop := p.isFadeStop
+		p.mutex.RUnlock()
+
+		if !isFadeStop {
+			// Hard stop - clear speaker immediately
+			speaker.Clear()
+		} else {
+			// Fade stop - volume is already 0, just signal and wait for natural end
+			// Give a small delay for the last buffered audio to play at 0 volume
+			time.Sleep(100 * time.Millisecond)
+		}
 		streamer.Close()
 		f.Close()
 		return nil

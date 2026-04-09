@@ -17,8 +17,8 @@ const (
 const (
 	DefaultTimerDuration = 25 * 60 * 1000 // 25 minutes in milliseconds
 	DefaultTUIRefreshMs  = 500            // TUI refresh interval in milliseconds
-	AudioFadeInDuration  = 3 * 1000       // 3 seconds fade in
-	AudioFadeOutDuration = 5 * 1000       // 5 seconds fade out
+	AudioFadeInDuration  = 2 * 1000       // 2 seconds fade in
+	AudioFadeOutDuration = 2 * 1000       // 2 seconds fade out
 )
 
 // Default paths (relative to home directory)

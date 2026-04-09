@@ -169,3 +169,21 @@ func (s *TimerService) AnyRunning() (bool, error) {
 	}
 	return len(running) > 0, nil
 }
+
+// GetRunningTimersAboutToEnd returns running timers that will end within the given duration
+func (s *TimerService) GetRunningTimersAboutToEnd(fadeOutMs int64) ([]*models.Timer, error) {
+	running, err := s.timerRepo.GetRunning()
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	var aboutToEnd []*models.Timer
+	for _, timer := range running {
+		remaining := timer.GetCurrentRemaining(now)
+		if remaining > 0 && remaining <= fadeOutMs {
+			aboutToEnd = append(aboutToEnd, timer)
+		}
+	}
+	return aboutToEnd, nil
+}
