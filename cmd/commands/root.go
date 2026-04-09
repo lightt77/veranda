@@ -11,7 +11,7 @@ import (
 
 var (
 	// Version is set during build
-	Version = "dev"
+	Version = "0.1.0"
 
 	// RootCmd is the root command
 	RootCmd = &cobra.Command{
