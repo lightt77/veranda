@@ -83,12 +83,14 @@ type AppConfig struct {
 // UserConfig holds user-editable configuration settings
 type UserConfig struct {
 	TimerCompletionSound string `json:"timer_completion_sound"`
+	AmbientSound         string `json:"ambient_sound"` // "shuffle" for random, or specific filename
 }
 
 // DefaultUserConfig returns the default user configuration
 func DefaultUserConfig() *UserConfig {
 	return &UserConfig{
 		TimerCompletionSound: DefaultTimerCompletionSound,
+		AmbientSound:         "shuffle", // Default to shuffle mode
 	}
 }
 
@@ -117,6 +119,9 @@ func LoadUserConfig(configDir string) *UserConfig {
 	// Set defaults for empty values
 	if cfg.TimerCompletionSound == "" {
 		cfg.TimerCompletionSound = DefaultTimerCompletionSound
+	}
+	if cfg.AmbientSound == "" {
+		cfg.AmbientSound = "shuffle"
 	}
 
 	return &cfg
