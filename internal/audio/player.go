@@ -176,8 +176,19 @@ func (p *Player) TestPlay(filename string, volume float64) (func(), error) {
 	// Return stop function
 	stopFunc := func() {
 		p.mutex.Lock()
-		if s, ok := p.testStreams[filename]; ok {
-			p.fadeOutStream(s, config.AudioFadeOutDuration)
+		stream, ok := p.testStreams[filename]
+		if !ok {
+			p.mutex.Unlock()
+			return
+		}
+		// Get the stream but release lock before fadeOut (it acquires its own locks)
+		p.mutex.Unlock()
+
+		// Fade out without holding the main mutex
+		p.fadeOutStream(stream, config.AudioFadeOutDuration)
+
+		p.mutex.Lock()
+		if s, stillThere := p.testStreams[filename]; stillThere && s == stream {
 			p.stopStreamLocked(s)
 			delete(p.testStreams, filename)
 		}
@@ -190,9 +201,19 @@ func (p *Player) TestPlay(filename string, volume float64) (func(), error) {
 // StopTestPlay stops a specific test playback
 func (p *Player) StopTestPlay(filename string) {
 	p.mutex.Lock()
-	if stream, ok := p.testStreams[filename]; ok {
-		p.fadeOutStream(stream, config.AudioFadeOutDuration)
-		p.stopStreamLocked(stream)
+	stream, ok := p.testStreams[filename]
+	if !ok {
+		p.mutex.Unlock()
+		return
+	}
+	p.mutex.Unlock()
+
+	// Fade out without holding the main mutex
+	p.fadeOutStream(stream, config.AudioFadeOutDuration)
+
+	p.mutex.Lock()
+	if s, stillThere := p.testStreams[filename]; stillThere && s == stream {
+		p.stopStreamLocked(s)
 		delete(p.testStreams, filename)
 	}
 	p.mutex.Unlock()
