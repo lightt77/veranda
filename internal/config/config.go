@@ -45,6 +45,8 @@ const (
 // Default user settings
 const (
 	DefaultTimerCompletionSound = "freesound_community-bell-98033.mp3"
+	DefaultChimeVolume          = 0.5 // 50% volume
+	DefaultAmbientVolume        = 0.5 // 50% volume
 )
 
 // Config returns the full application configuration
@@ -80,17 +82,26 @@ type AppConfig struct {
 	DaemonPort   int
 }
 
+// AmbientSoundConfig holds configuration for a single ambient sound
+type AmbientSoundConfig struct {
+	Filename string  `json:"filename"`
+	Volume   float64 `json:"volume"`
+	Enabled  bool    `json:"enabled"`
+}
+
 // UserConfig holds user-editable configuration settings
 type UserConfig struct {
-	TimerCompletionSound string `json:"timer_completion_sound"`
-	AmbientSound         string `json:"ambient_sound"` // "shuffle" for random, or specific filename
+	TimerCompletionSound string               `json:"timer_completion_sound"`
+	ChimeVolume          float64              `json:"chime_volume"`
+	AmbientSounds        []AmbientSoundConfig `json:"ambient_sounds"`
 }
 
 // DefaultUserConfig returns the default user configuration
 func DefaultUserConfig() *UserConfig {
 	return &UserConfig{
 		TimerCompletionSound: DefaultTimerCompletionSound,
-		AmbientSound:         "shuffle", // Default to shuffle mode
+		ChimeVolume:          DefaultChimeVolume,
+		AmbientSounds:        []AmbientSoundConfig{}, // Empty by default, populated on first run with available files
 	}
 }
 
@@ -120,9 +131,11 @@ func LoadUserConfig(configDir string) *UserConfig {
 	if cfg.TimerCompletionSound == "" {
 		cfg.TimerCompletionSound = DefaultTimerCompletionSound
 	}
-	if cfg.AmbientSound == "" {
-		cfg.AmbientSound = "shuffle"
+	if cfg.ChimeVolume == 0 {
+		cfg.ChimeVolume = DefaultChimeVolume
 	}
+	// Note: AmbientSounds is intentionally not auto-populated here.
+	// The TUI will initialize it with available files on first access.
 
 	return &cfg
 }
