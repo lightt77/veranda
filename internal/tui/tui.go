@@ -567,6 +567,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.settingsMessage != "" && time.Since(m.settingsMessageTime) > 3*time.Second {
 			m.settingsMessage = ""
 		}
+		// Sync test playback state with actual audio player state
+		// This handles the case where a test finished naturally
+		if m.testAudioPlayer != nil {
+			for filename := range m.ambientTestPlaying {
+				if !m.testAudioPlayer.IsTestPlaying(filename) {
+					// Test finished naturally, clean up
+					delete(m.ambientTestPlaying, filename)
+					delete(m.ambientStopFuncs, filename)
+				}
+			}
+		}
 		return m, tickCmd()
 
 	case refreshMsg:
@@ -610,12 +621,24 @@ func (m *Model) toggleAmbientTest() {
 
 	sound := m.userConfig.AmbientSounds[m.ambientSelectedIdx]
 
-	// Check if already playing
-	if m.ambientTestPlaying[sound.Filename] {
+	// Check actual playback state (in case it finished naturally)
+	isActuallyPlaying := m.testAudioPlayer.IsTestPlaying(sound.Filename)
+	isMarkedPlaying := m.ambientTestPlaying[sound.Filename]
+
+	// If marked as playing but actually stopped (finished naturally), clean up
+	if isMarkedPlaying && !isActuallyPlaying {
+		m.ambientTestPlaying[sound.Filename] = false
+		delete(m.ambientStopFuncs, sound.Filename)
+		isMarkedPlaying = false
+	}
+
+	// Toggle based on current state
+	if isMarkedPlaying {
 		// Stop it
 		if stopFunc, ok := m.ambientStopFuncs[sound.Filename]; ok && stopFunc != nil {
 			stopFunc()
 		}
+		m.testAudioPlayer.StopTestPlay(sound.Filename) // Ensure it's stopped
 		m.ambientTestPlaying[sound.Filename] = false
 		delete(m.ambientStopFuncs, sound.Filename)
 	} else {
@@ -1335,9 +1358,11 @@ func (m Model) renderAmbientSounds() string {
 			volStr = lipgloss.NewStyle().Foreground(yellow).Render(volStr)
 		}
 
-		// Test indicator
+		// Test indicator - check both our state and actual player state
 		testIndicator := "  "
-		if m.ambientTestPlaying[sound.Filename] {
+		isActuallyPlaying := m.testAudioPlayer != nil && m.testAudioPlayer.IsTestPlaying(sound.Filename)
+		isMarkedPlaying := m.ambientTestPlaying[sound.Filename]
+		if isActuallyPlaying || isMarkedPlaying {
 			testIndicator = lipgloss.NewStyle().Foreground(green).Render("▶ ")
 		}
 
