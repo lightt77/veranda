@@ -3,6 +3,7 @@ package notify
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"sync"
 
@@ -100,11 +101,15 @@ func (s *Service) PlayTimerCompletionSound() error {
 		soundFile := userConfig.TimerCompletionSound
 		if err := audioPlayer.PlayOneShot(soundFile); err == nil {
 			return nil // Sound played successfully
+		} else {
+			// Log the error for debugging
+			fmt.Fprintf(os.Stderr, "[notify] Failed to play sound '%s': %v\n", soundFile, err)
 		}
 		// Fall through to beep on error
 	}
 
 	// Fallback to system beep
+	fmt.Fprintln(os.Stderr, "[notify] Falling back to system beep")
 	return s.Beep()
 }
 
