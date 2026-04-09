@@ -22,6 +22,8 @@ import (
 type Player struct {
 	config      *config.AppConfig
 	soundsDir   string
+	chimesDir   string
+	ambienceDir string
 	volume      float64
 	isPlaying   bool
 	isFading    bool
@@ -37,8 +39,6 @@ type Player struct {
 
 // NewPlayer creates a new audio player
 func NewPlayer(cfg *config.AppConfig) (*Player, error) {
-	soundsDir := cfg.SoundsDir
-
 	// Initialize speaker with default sample rate
 	sampleRate := beep.SampleRate(44100)
 	err := speaker.Init(sampleRate, sampleRate.N(time.Second/10))
@@ -47,11 +47,13 @@ func NewPlayer(cfg *config.AppConfig) (*Player, error) {
 	}
 
 	player := &Player{
-		config:     cfg,
-		soundsDir:  soundsDir,
-		volume:     0.5, // Default 50% volume
-		sampleRate: sampleRate,
-		stopChan:   make(chan struct{}),
+		config:      cfg,
+		soundsDir:   cfg.SoundsDir,
+		chimesDir:   cfg.ChimesDir,
+		ambienceDir: cfg.AmbienceDir,
+		volume:      0.5, // Default 50% volume
+		sampleRate:  sampleRate,
+		stopChan:    make(chan struct{}),
 	}
 
 	return player, nil
@@ -377,12 +379,16 @@ func (p *Player) fadeOut(durationMs int64) {
 	}
 }
 
-// getSoundFiles returns all MP3 files in the sounds directory
+// getSoundFiles returns all MP3 files in the ambience directory
 func (p *Player) getSoundFiles() ([]string, error) {
-	entries, err := os.ReadDir(p.soundsDir)
+	p.mutex.RLock()
+	ambienceDir := p.ambienceDir
+	p.mutex.RUnlock()
+
+	entries, err := os.ReadDir(ambienceDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("sounds directory does not exist: %s", p.soundsDir)
+			return nil, fmt.Errorf("ambience directory does not exist: %s", ambienceDir)
 		}
 		return nil, err
 	}
@@ -394,7 +400,7 @@ func (p *Player) getSoundFiles() ([]string, error) {
 		}
 		name := entry.Name()
 		if strings.HasSuffix(strings.ToLower(name), ".mp3") {
-			files = append(files, filepath.Join(p.soundsDir, name))
+			files = append(files, filepath.Join(ambienceDir, name))
 		}
 	}
 
@@ -410,14 +416,18 @@ func (p *Player) GetCurrentFile() string {
 
 // PlayOneShot plays a single MP3 file once asynchronously (non-blocking)
 // The filename should be just the filename (not full path), which will be resolved
-// relative to the sounds directory. Returns error if file doesn't exist.
+// relative to the chimes directory. Returns error if file doesn't exist.
 func (p *Player) PlayOneShot(filename string) error {
-	// Resolve full path
-	fullPath := filepath.Join(p.soundsDir, filename)
+	p.mutex.RLock()
+	chimesDir := p.chimesDir
+	p.mutex.RUnlock()
+
+	// Resolve full path in chimes directory
+	fullPath := filepath.Join(chimesDir, filename)
 
 	// Check if file exists
 	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
-		return fmt.Errorf("sound file not found: %s", filename)
+		return fmt.Errorf("sound file not found in chimes directory: %s", filename)
 	}
 
 	// Open the file
