@@ -115,6 +115,13 @@ func (s *AmbientService) monitorActivity() {
 
 // checkAndUpdatePlayback checks if any timer/stopwatch is running and updates playback
 func (s *AmbientService) checkAndUpdatePlayback() {
+	// Check if any timer is about to end (within fade out duration)
+	timersAboutToEnd, err := s.timerService.GetRunningTimersAboutToEnd(config.AudioFadeOutDuration)
+	if err != nil {
+		fmt.Printf("Error checking timers about to end: %v\n", err)
+		return
+	}
+
 	// Check if any timer is running
 	timersRunning, err := s.timerService.AnyRunning()
 	if err != nil {
@@ -134,6 +141,12 @@ func (s *AmbientService) checkAndUpdatePlayback() {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
+	// Start fade out early if a timer is about to end and we're not already fading
+	if len(timersAboutToEnd) > 0 && s.player.IsPlaying() && !s.player.IsFading() && s.isAutoPlaying {
+		s.player.StartFadeOut(config.AudioFadeOutDuration)
+		fmt.Println("Ambient sound fading out (timer about to end)")
+	}
+
 	if anyActive && !s.player.IsPlaying() {
 		// Start ambient sound
 		if err := s.player.Play(true); err != nil {
@@ -144,10 +157,13 @@ func (s *AmbientService) checkAndUpdatePlayback() {
 		s.isAutoPlaying = true
 		fmt.Println("Ambient sound started (timer/stopwatch active)")
 	} else if !anyActive && s.player.IsPlaying() && s.isAutoPlaying {
-		// Stop ambient sound
-		s.player.Stop(config.AudioFadeOutDuration)
-		s.isAutoPlaying = false
-		fmt.Println("Ambient sound stopped (no active timers)")
+		// Only stop if not already fading out (StartFadeOut handles stopping)
+		if !s.player.IsFading() {
+			s.player.Stop(config.AudioFadeOutDuration)
+			s.isAutoPlaying = false
+			fmt.Println("Ambient sound stopped (no active timers)")
+		}
+		// If fading, let the fade complete and stop automatically
 	}
 }
 
