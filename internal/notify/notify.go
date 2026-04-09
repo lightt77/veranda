@@ -98,7 +98,8 @@ func (s *Service) PlayTimerCompletionSound() error {
 	// If we have an audio player and config, try to play the configured sound
 	if audioPlayer != nil {
 		soundFile := userConfig.TimerCompletionSound
-		if err := audioPlayer.PlayOneShot(soundFile); err == nil {
+		volume := userConfig.ChimeVolume
+		if err := audioPlayer.PlayOneShot(soundFile, volume); err == nil {
 			return nil // Sound played successfully
 		}
 		// Fall through to beep on error
