@@ -315,10 +315,6 @@ func seedCities(db *sql.DB) error {
 		{"Israel", "Tel Aviv", 32.0853, 34.7818, "Asia/Jerusalem"},
 		{"Israel", "Jerusalem", 31.7683, 35.2137, "Asia/Jerusalem"},
 
-		// UAE
-		{"UAE", "Dubai", 25.2048, 55.2708, "Asia/Dubai"},
-		{"UAE", "Abu Dhabi", 24.4539, 54.3773, "Asia/Dubai"},
-
 		// Qatar
 		{"Qatar", "Doha", 25.2854, 51.5310, "Asia/Qatar"},
 
