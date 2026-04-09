@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/lightt77/veranda/internal/audio"
 	"github.com/lightt77/veranda/internal/config"
 	"github.com/lightt77/veranda/internal/daemon"
 	"github.com/lightt77/veranda/internal/repository"
@@ -35,7 +37,7 @@ type Model struct {
 	client        *daemon.Client
 	timers        []map[string]interface{}
 	stopwatches   []map[string]interface{}
-	activeTab     int  // 0 = timers, 1 = stopwatches, 2 = preferences
+	activeTab     int  // 0 = timers, 1 = stopwatches, 2 = ambient sounds, 3 = preferences
 	showCompleted bool // toggle to show/hide completed timers
 	selectedIdx   int  // currently selected item index
 	width         int
@@ -62,17 +64,28 @@ type Model struct {
 	showObjectNames bool // Toggle to show/hide celestial object names
 
 	// Preferences
-	userConfig            *config.UserConfig
-	configDir             string
-	chimesDir             string
-	ambienceDir           string
-	settingsMessage       string
-	selectingSoundFile    bool // dropdown mode for selecting chime sound file
-	selectingAmbientFile  bool // dropdown mode for selecting ambient sound file
-	availableSoundFiles   []string
+	userConfig          *config.UserConfig
+	configDir           string
+	chimesDir           string
+	ambienceDir         string
+	settingsMessage     string
+	settingsMessageTime time.Time
+	selectingSoundFile  bool // dropdown mode for selecting chime sound file
+	availableSoundFiles []string
+	selectedSoundIdx    int
+
+	// Chime volume editing
+	editingChimeVolume bool
+
+	// Ambient Sounds tab
 	availableAmbientFiles []string
-	selectedSoundIdx      int
-	selectedAmbientIdx    int
+	ambientSelectedIdx    int
+	ambientTestPlaying    map[string]bool   // tracks which sounds are being tested
+	ambientStopFuncs      map[string]func() // stop functions for test playback
+	editingAmbientVolume  bool
+
+	// Audio player for test playback (initialized on first use)
+	testAudioPlayer *audio.Player
 }
 
 // Catppuccin Mocha Color Palette
@@ -190,15 +203,31 @@ func New(port int, citiesRepo *repository.CitiesRepository) Model {
 	ambienceDir := filepath.Join(homeDir, config.DefaultAmbienceDir)
 	userConfig := config.LoadUserConfig(configDir)
 
-	// Load available sound files from chimes and ambience directories
+	// Load available sound files
 	availableSounds := loadAvailableSoundFiles(chimesDir)
-	availableAmbience := append([]string{"shuffle"}, loadAvailableSoundFiles(ambienceDir)...)
+	availableAmbience := loadAvailableSoundFiles(ambienceDir)
+
+	// Initialize ambient sounds if empty (first run)
+	if len(userConfig.AmbientSounds) == 0 && len(availableAmbience) > 0 {
+		// Create config entries for all available files
+		// First one enabled by default, rest disabled
+		for i, filename := range availableAmbience {
+			enabled := i == 0 // Only first one enabled
+			userConfig.AmbientSounds = append(userConfig.AmbientSounds, config.AmbientSoundConfig{
+				Filename: filename,
+				Volume:   config.DefaultAmbientVolume,
+				Enabled:  enabled,
+			})
+		}
+		// Save the initialized config
+		_ = userConfig.Save(configDir)
+	}
 
 	return Model{
 		client:                daemon.NewClient(port),
 		activeTab:             0,
 		lastUpdate:            time.Now(),
-		starfieldMode:         ModeRandom, // Default to random mode
+		starfieldMode:         ModeRandom,
 		randomStarfield:       starfield.NewRandomStarfield(),
 		realisticStarfield:    starfield.NewRealisticStarfield(observer),
 		citiesRepo:            citiesRepo,
@@ -209,6 +238,8 @@ func New(port int, citiesRepo *repository.CitiesRepository) Model {
 		ambienceDir:           ambienceDir,
 		availableSoundFiles:   availableSounds,
 		availableAmbientFiles: availableAmbience,
+		ambientTestPlaying:    make(map[string]bool),
+		ambientStopFuncs:      make(map[string]func()),
 	}
 }
 
@@ -322,25 +353,97 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Handle ambient volume editing mode
+		if m.activeTab == 2 && m.editingAmbientVolume {
+			switch msg.String() {
+			case "esc", "enter":
+				m.editingAmbientVolume = false
+			case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9":
+				// Set volume to key value * 10%
+				vol := float64(msg.String()[0]-'0') / 10.0
+				if m.ambientSelectedIdx < len(m.userConfig.AmbientSounds) {
+					m.userConfig.AmbientSounds[m.ambientSelectedIdx].Volume = vol
+				}
+			case "up", "k":
+				if m.ambientSelectedIdx < len(m.userConfig.AmbientSounds) {
+					newVol := m.userConfig.AmbientSounds[m.ambientSelectedIdx].Volume + 0.1
+					if newVol > 1.0 {
+						newVol = 1.0
+					}
+					m.userConfig.AmbientSounds[m.ambientSelectedIdx].Volume = newVol
+				}
+			case "down", "j":
+				if m.ambientSelectedIdx < len(m.userConfig.AmbientSounds) {
+					newVol := m.userConfig.AmbientSounds[m.ambientSelectedIdx].Volume - 0.1
+					if newVol < 0.0 {
+						newVol = 0.0
+					}
+					m.userConfig.AmbientSounds[m.ambientSelectedIdx].Volume = newVol
+				}
+			}
+			return m, nil
+		}
+
+		// Handle chime volume editing mode
+		if m.activeTab == 3 && m.editingChimeVolume {
+			switch msg.String() {
+			case "esc", "enter":
+				m.editingChimeVolume = false
+			case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9":
+				// Set volume to key value * 10%
+				m.userConfig.ChimeVolume = float64(msg.String()[0]-'0') / 10.0
+			case "up", "k":
+				newVol := m.userConfig.ChimeVolume + 0.1
+				if newVol > 1.0 {
+					newVol = 1.0
+				}
+				m.userConfig.ChimeVolume = newVol
+			case "down", "j":
+				newVol := m.userConfig.ChimeVolume - 0.1
+				if newVol < 0.0 {
+					newVol = 0.0
+				}
+				m.userConfig.ChimeVolume = newVol
+			}
+			return m, nil
+		}
+
 		switch msg.String() {
 		case "q", "ctrl+c":
+			// Stop any test playback before quitting
+			m.stopAllTestPlayback()
 			return m, tea.Quit
 		case "tab", "right":
-			m.activeTab = (m.activeTab + 1) % 3
+			m.activeTab = (m.activeTab + 1) % 4
 			m.selectedIdx = 0
 			m.selectingSoundFile = false
+			m.editingAmbientVolume = false
+			m.editingChimeVolume = false
 		case "shift+tab", "left":
-			m.activeTab = (m.activeTab - 1 + 3) % 3
+			m.activeTab = (m.activeTab - 1 + 4) % 4
 			m.selectedIdx = 0
 			m.selectingSoundFile = false
+			m.editingAmbientVolume = false
+			m.editingChimeVolume = false
 		case "up", "k":
-			m.selectedIdx = max(0, m.selectedIdx-1)
-		case "down", "j":
-			maxIdx := len(m.timers) - 1
-			if m.activeTab == 1 {
-				maxIdx = len(m.stopwatches) - 1
+			if m.activeTab == 2 {
+				if m.ambientSelectedIdx > 0 {
+					m.ambientSelectedIdx--
+				}
+			} else {
+				m.selectedIdx = max(0, m.selectedIdx-1)
 			}
-			m.selectedIdx = min(maxIdx, m.selectedIdx+1)
+		case "down", "j":
+			if m.activeTab == 2 {
+				maxIdx := len(m.userConfig.AmbientSounds) - 1
+				m.ambientSelectedIdx = min(maxIdx, m.ambientSelectedIdx+1)
+			} else {
+				maxIdx := len(m.timers) - 1
+				if m.activeTab == 1 {
+					maxIdx = len(m.stopwatches) - 1
+				}
+				m.selectedIdx = min(maxIdx, m.selectedIdx+1)
+			}
 		case " ", "p":
 			// Pause/resume selected timer or stopwatch
 			if m.activeTab == 0 && m.selectedIdx < len(m.timers) {
@@ -356,7 +459,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, deleteStopwatchCmd(m.client, m.stopwatches, m.selectedIdx)
 			}
 		case "r":
-			return m, refreshCmd(m.client)
+			if m.activeTab == 2 {
+				// Reset ambient sounds to defaults
+				m.resetAmbientSounds()
+			} else {
+				return m, refreshCmd(m.client)
+			}
 		case "h":
 			// Toggle showing completed timers
 			if m.activeTab == 0 {
@@ -364,14 +472,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedIdx = 0
 			}
 		case "t":
-			// Quick timer creation placeholder
 			if m.activeTab == 0 {
+				// Quick timer creation
 				return m, createTimerCmd(m.client)
+			} else if m.activeTab == 2 && m.ambientSelectedIdx < len(m.userConfig.AmbientSounds) {
+				// Test toggle for ambient sound
+				m.toggleAmbientTest()
 			}
 		case "s":
-			// Quick stopwatch creation placeholder
 			if m.activeTab == 1 {
+				// Quick stopwatch creation
 				return m, createStopwatchCmd(m.client)
+			} else if m.activeTab == 2 {
+				// Save ambient sound settings
+				m.saveAmbientSettings()
 			}
 		case "m":
 			// Toggle starfield mode
@@ -394,7 +508,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showObjectNames = !m.showObjectNames
 		case "e":
 			// Edit timer completion sound file (only in preferences tab)
-			if m.activeTab == 2 && !m.selectingSoundFile && !m.selectingAmbientFile {
+			if m.activeTab == 3 && !m.selectingSoundFile {
 				m.selectingSoundFile = true
 				// Find current sound file index
 				m.selectedSoundIdx = 0
@@ -405,18 +519,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-		case "a":
-			// Edit ambient sound file (only in preferences tab)
-			if m.activeTab == 2 && !m.selectingSoundFile && !m.selectingAmbientFile {
-				m.selectingAmbientFile = true
-				// Find current ambient file index
-				m.selectedAmbientIdx = 0
-				for i, f := range m.availableAmbientFiles {
-					if f == m.userConfig.AmbientSound {
-						m.selectedAmbientIdx = i
-						break
-					}
-				}
+		case "space":
+			// Toggle enable/disable ambient sound
+			if m.activeTab == 2 && m.ambientSelectedIdx < len(m.userConfig.AmbientSounds) {
+				m.userConfig.AmbientSounds[m.ambientSelectedIdx].Enabled =
+					!m.userConfig.AmbientSounds[m.ambientSelectedIdx].Enabled
+			}
+		case "v":
+			// Edit volume
+			if m.activeTab == 2 && m.ambientSelectedIdx < len(m.userConfig.AmbientSounds) {
+				m.editingAmbientVolume = true
+			} else if m.activeTab == 3 {
+				m.editingChimeVolume = true
 			}
 		}
 
@@ -430,9 +544,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.selectedSoundIdx < len(m.availableSoundFiles) {
 					m.userConfig.TimerCompletionSound = m.availableSoundFiles[m.selectedSoundIdx]
 					if err := m.userConfig.Save(m.configDir); err != nil {
-						m.settingsMessage = fmt.Sprintf("Error saving: %v", err)
+						m.setSettingsMessage(fmt.Sprintf("Error saving: %v", err))
 					} else {
-						m.settingsMessage = "Settings saved!"
+						m.setSettingsMessage("Settings saved!")
 					}
 				}
 				m.selectingSoundFile = false
@@ -447,35 +561,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// Handle dropdown navigation when selecting ambient file
-		if m.selectingAmbientFile {
-			switch msg.String() {
-			case "esc":
-				m.selectingAmbientFile = false
-			case "enter":
-				// Save the selected ambient file
-				if m.selectedAmbientIdx < len(m.availableAmbientFiles) {
-					m.userConfig.AmbientSound = m.availableAmbientFiles[m.selectedAmbientIdx]
-					if err := m.userConfig.Save(m.configDir); err != nil {
-						m.settingsMessage = fmt.Sprintf("Error saving: %v", err)
-					} else {
-						m.settingsMessage = "Settings saved!"
-					}
-				}
-				m.selectingAmbientFile = false
-			case "up", "k":
-				if m.selectedAmbientIdx > 0 {
-					m.selectedAmbientIdx--
-				}
-			case "down", "j":
-				if m.selectedAmbientIdx < len(m.availableAmbientFiles)-1 {
-					m.selectedAmbientIdx++
-				}
-			}
-		}
-
 	case tickMsg:
 		m.lastUpdate = time.Time(msg)
+		// Clear settings message after 3 seconds
+		if m.settingsMessage != "" && time.Since(m.settingsMessageTime) > 3*time.Second {
+			m.settingsMessage = ""
+		}
 		return m, tickCmd()
 
 	case refreshMsg:
@@ -496,6 +587,75 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// setSettingsMessage sets a temporary settings message
+func (m *Model) setSettingsMessage(msg string) {
+	m.settingsMessage = msg
+	m.settingsMessageTime = time.Now()
+}
+
+// toggleAmbientTest toggles test playback for the selected ambient sound
+func (m *Model) toggleAmbientTest() {
+	if m.testAudioPlayer == nil {
+		// Initialize test audio player
+		cfg := config.Config()
+		player, err := audio.NewPlayer(cfg, m.configDir)
+		if err != nil {
+			m.setSettingsMessage(fmt.Sprintf("Audio error: %v", err))
+			return
+		}
+		m.testAudioPlayer = player
+	}
+
+	sound := m.userConfig.AmbientSounds[m.ambientSelectedIdx]
+
+	// Check if already playing
+	if m.ambientTestPlaying[sound.Filename] {
+		// Stop it
+		if stopFunc, ok := m.ambientStopFuncs[sound.Filename]; ok && stopFunc != nil {
+			stopFunc()
+		}
+		m.ambientTestPlaying[sound.Filename] = false
+		delete(m.ambientStopFuncs, sound.Filename)
+	} else {
+		// Start it
+		stopFunc, err := m.testAudioPlayer.TestPlay(sound.Filename, sound.Volume)
+		if err != nil {
+			m.setSettingsMessage(fmt.Sprintf("Play error: %v", err))
+			return
+		}
+		m.ambientTestPlaying[sound.Filename] = true
+		m.ambientStopFuncs[sound.Filename] = stopFunc
+	}
+}
+
+// stopAllTestPlayback stops all ambient test playback
+func (m *Model) stopAllTestPlayback() {
+	if m.testAudioPlayer != nil {
+		m.testAudioPlayer.StopAllTestPlays()
+	}
+	m.ambientTestPlaying = make(map[string]bool)
+	m.ambientStopFuncs = make(map[string]func())
+}
+
+// saveAmbientSettings saves the ambient sound configuration
+func (m *Model) saveAmbientSettings() {
+	if err := m.userConfig.Save(m.configDir); err != nil {
+		m.setSettingsMessage(fmt.Sprintf("Error saving: %v", err))
+	} else {
+		m.setSettingsMessage("Ambient settings saved!")
+	}
+}
+
+// resetAmbientSounds resets ambient sounds to default (first enabled)
+func (m *Model) resetAmbientSounds() {
+	// Reset to default: only first one enabled at 50%
+	for i := range m.userConfig.AmbientSounds {
+		m.userConfig.AmbientSounds[i].Enabled = i == 0
+		m.userConfig.AmbientSounds[i].Volume = config.DefaultAmbientVolume
+	}
+	m.saveAmbientSettings()
 }
 
 // searchCities searches for cities based on current search string
@@ -620,7 +780,6 @@ func (m Model) renderRandomStarfield(starAreaHeight int) string {
 // renderRealisticStarfield renders the realistic starfield
 func (m Model) renderRealisticStarfield(starAreaHeight int) string {
 	// Use a grid to track characters and their styles separately
-	// grid[y][x] = {char, style}
 	type Cell struct {
 		char  string
 		color lipgloss.Color
@@ -643,16 +802,11 @@ func (m Model) renderRealisticStarfield(starAreaHeight int) string {
 		if obj.ScreenY >= 0 && obj.ScreenY < starAreaHeight &&
 			obj.ScreenX >= 0 && obj.ScreenX < m.width {
 
-			// Get symbol based on brightness with twinkling
 			symbol := starfield.GetObjectSymbol(obj.Object, obj.Brightness, obj.TwinklePhase)
-
-			// Get twinkle-adjusted brightness and color
 			twinkleBrightness := starfield.GetTwinkleBrightness(obj.Brightness, obj.TwinklePhase, obj.Object.Type)
 			color := starfield.GetObjectColor(obj.Object, twinkleBrightness)
 
-			// Place symbol in grid (single character/rune)
 			if len(symbol) > 0 {
-				// Convert to runes to handle multi-byte UTF-8 characters properly
 				runes := []rune(symbol)
 				if len(runes) > 0 {
 					grid[obj.ScreenY][obj.ScreenX] = Cell{
@@ -674,35 +828,31 @@ func (m Model) renderRealisticStarfield(starAreaHeight int) string {
 
 				name := obj.Object.Name
 				nameRunes := []rune(name)
-				nameLen := len(nameRunes) // Use rune count for proper UTF-8 handling
+				nameLen := len(nameRunes)
 
-				// Try different positions around the object to find open space
-				// Priority: right, left, below, above, then diagonals, then further away
 				positions := [][2]int{
-					{obj.ScreenX + 2, obj.ScreenY},               // right
-					{obj.ScreenX - nameLen - 1, obj.ScreenY},     // left
-					{obj.ScreenX - nameLen/2, obj.ScreenY + 1},   // below (centered)
-					{obj.ScreenX - nameLen/2, obj.ScreenY - 1},   // above (centered)
-					{obj.ScreenX + 2, obj.ScreenY + 1},           // below-right
-					{obj.ScreenX - nameLen - 1, obj.ScreenY + 1}, // below-left
-					{obj.ScreenX + 2, obj.ScreenY - 1},           // above-right
-					{obj.ScreenX - nameLen - 1, obj.ScreenY - 1}, // above-left
-					{obj.ScreenX + 3, obj.ScreenY},               // further right
-					{obj.ScreenX - nameLen - 2, obj.ScreenY},     // further left
-					{obj.ScreenX - nameLen/2, obj.ScreenY + 2},   // further below
-					{obj.ScreenX - nameLen/2, obj.ScreenY - 2},   // further above
+					{obj.ScreenX + 2, obj.ScreenY},
+					{obj.ScreenX - nameLen - 1, obj.ScreenY},
+					{obj.ScreenX - nameLen/2, obj.ScreenY + 1},
+					{obj.ScreenX - nameLen/2, obj.ScreenY - 1},
+					{obj.ScreenX + 2, obj.ScreenY + 1},
+					{obj.ScreenX - nameLen - 1, obj.ScreenY + 1},
+					{obj.ScreenX + 2, obj.ScreenY - 1},
+					{obj.ScreenX - nameLen - 1, obj.ScreenY - 1},
+					{obj.ScreenX + 3, obj.ScreenY},
+					{obj.ScreenX - nameLen - 2, obj.ScreenY},
+					{obj.ScreenX - nameLen/2, obj.ScreenY + 2},
+					{obj.ScreenX - nameLen/2, obj.ScreenY - 2},
 				}
 
 				for _, pos := range positions {
 					nameX := pos[0]
 					nameY := pos[1]
 
-					// Check if position is within bounds
 					if nameX < 0 || nameX+nameLen > m.width || nameY < 0 || nameY >= starAreaHeight {
 						continue
 					}
 
-					// Check if there's enough space and position isn't occupied
 					canPlace := true
 					for i := 0; i < nameLen && nameX+i < m.width; i++ {
 						if occupiedPositions[[2]int{nameX + i, nameY}] || grid[nameY][nameX+i].isSet {
@@ -712,7 +862,6 @@ func (m Model) renderRealisticStarfield(starAreaHeight int) string {
 					}
 
 					if canPlace {
-						// Place name characters in grid
 						colOffset := 0
 						for _, ch := range nameRunes {
 							if nameX+colOffset < m.width {
@@ -724,7 +873,7 @@ func (m Model) renderRealisticStarfield(starAreaHeight int) string {
 								colOffset++
 							}
 						}
-						break // Successfully placed, stop trying other positions
+						break
 					}
 				}
 			}
@@ -821,30 +970,39 @@ func (m Model) renderContent() string {
 	// Title
 	s += leftPad + titleStyle.Render("⏱️  Veranda") + "\n"
 
-	// Tabs
+	// Tabs - now 4 tabs
 	timersTab := inactiveTabStyle.Render("Timers [t]")
 	stopwatchesTab := inactiveTabStyle.Render("Stopwatches [s]")
+	ambientTab := inactiveTabStyle.Render("Ambient [a]")
 	prefsTab := inactiveTabStyle.Render("Prefs [e]")
 
-	if m.activeTab == 0 {
+	switch m.activeTab {
+	case 0:
 		timersTab = activeTabStyle.Render("Timers [t]")
-	} else if m.activeTab == 1 {
+	case 1:
 		stopwatchesTab = activeTabStyle.Render("Stopwatches [s]")
-	} else {
+	case 2:
+		ambientTab = activeTabStyle.Render("Ambient [a]")
+	case 3:
 		prefsTab = activeTabStyle.Render("Prefs [e]")
 	}
 
-	s += leftPad + lipgloss.JoinHorizontal(lipgloss.Left, timersTab, stopwatchesTab, prefsTab) + "\n"
+	s += leftPad + lipgloss.JoinHorizontal(lipgloss.Left, timersTab, stopwatchesTab, ambientTab, prefsTab) + "\n"
 
 	// Content
 	if m.err != nil {
 		s += leftPad + fmt.Sprintf("Error: %v\n", m.err)
-	} else if m.activeTab == 0 {
-		s += leftPad + strings.ReplaceAll(m.renderTimers(), "\n", "\n"+leftPad)
-	} else if m.activeTab == 1 {
-		s += leftPad + strings.ReplaceAll(m.renderStopwatches(), "\n", "\n"+leftPad)
 	} else {
-		s += leftPad + strings.ReplaceAll(m.renderPreferences(), "\n", "\n"+leftPad)
+		switch m.activeTab {
+		case 0:
+			s += leftPad + strings.ReplaceAll(m.renderTimers(), "\n", "\n"+leftPad)
+		case 1:
+			s += leftPad + strings.ReplaceAll(m.renderStopwatches(), "\n", "\n"+leftPad)
+		case 2:
+			s += leftPad + strings.ReplaceAll(m.renderAmbientSounds(), "\n", "\n"+leftPad)
+		case 3:
+			s += leftPad + strings.ReplaceAll(m.renderPreferences(), "\n", "\n"+leftPad)
+		}
 	}
 
 	// Status line with mode, location, and names toggle
@@ -864,40 +1022,62 @@ func (m Model) renderContent() string {
 	}
 
 	statusLine := lipgloss.NewStyle().Foreground(overlay0).Render(
-		fmt.Sprintf("Mode: %s [%s] | Loc: %s [%s] | Names: %s [%s] | ", modeText, lipgloss.NewStyle().Foreground(mauve).Render("m"), locationText, lipgloss.NewStyle().Foreground(mauve).Render("l"), namesText, lipgloss.NewStyle().Foreground(mauve).Render("n")),
+		fmt.Sprintf("Mode: %s [%s] | Loc: %s [%s] | Names: %s [%s] | ",
+			modeText, lipgloss.NewStyle().Foreground(mauve).Render("m"),
+			locationText, lipgloss.NewStyle().Foreground(mauve).Render("l"),
+			namesText, lipgloss.NewStyle().Foreground(mauve).Render("n")),
 	)
 
-	// Help - different based on active tab and mode
+	// Help - different based on active tab
 	var helpText string
-	if m.activeTab == 2 && m.selectingSoundFile {
-		// Sound file dropdown selection mode
-		helpText = lipgloss.NewStyle().Foreground(mauve).Render("↑↓") +
-			lipgloss.NewStyle().Foreground(overlay0).Render("/jk:select ") +
-			lipgloss.NewStyle().Foreground(mauve).Render("enter") +
-			lipgloss.NewStyle().Foreground(overlay0).Render(":confirm ") +
-			lipgloss.NewStyle().Foreground(mauve).Render("esc") +
-			lipgloss.NewStyle().Foreground(overlay0).Render(":cancel")
-	} else if m.activeTab == 2 {
-		// Preferences tab help (normal mode)
-		if m.selectingSoundFile || m.selectingAmbientFile {
+	switch m.activeTab {
+	case 2:
+		// Ambient Sounds tab
+		if m.editingAmbientVolume {
+			helpText = lipgloss.NewStyle().Foreground(mauve).Render("0-9") +
+				lipgloss.NewStyle().Foreground(overlay0).Render("/↑↓:volume ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("enter/esc") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":done")
+		} else {
+			helpText = lipgloss.NewStyle().Foreground(mauve).Render("↑↓") +
+				lipgloss.NewStyle().Foreground(overlay0).Render("/jk:select ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("space") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":toggle ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("t") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":test ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("v") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":vol ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("s") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":save ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("r") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":reset")
+		}
+	case 3:
+		// Preferences tab
+		if m.selectingSoundFile {
 			helpText = lipgloss.NewStyle().Foreground(mauve).Render("↑↓") +
 				lipgloss.NewStyle().Foreground(overlay0).Render("/jk:select ") +
 				lipgloss.NewStyle().Foreground(mauve).Render("enter") +
 				lipgloss.NewStyle().Foreground(overlay0).Render(":confirm ") +
 				lipgloss.NewStyle().Foreground(mauve).Render("esc") +
 				lipgloss.NewStyle().Foreground(overlay0).Render(":cancel")
+		} else if m.editingChimeVolume {
+			helpText = lipgloss.NewStyle().Foreground(mauve).Render("0-9") +
+				lipgloss.NewStyle().Foreground(overlay0).Render("/↑↓:volume ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("enter/esc") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":done")
 		} else {
 			helpText = lipgloss.NewStyle().Foreground(mauve).Render("e") +
 				lipgloss.NewStyle().Foreground(overlay0).Render(":chime ") +
-				lipgloss.NewStyle().Foreground(mauve).Render("a") +
-				lipgloss.NewStyle().Foreground(overlay0).Render(":ambient ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("v") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":chime-vol ") +
 				lipgloss.NewStyle().Foreground(mauve).Render("tab") +
 				lipgloss.NewStyle().Foreground(overlay0).Render(":switch ") +
 				lipgloss.NewStyle().Foreground(mauve).Render("q") +
 				lipgloss.NewStyle().Foreground(overlay0).Render(":quit")
 		}
-	} else {
-		// Timer/stopwatch tab help
+	default:
+		// Timer/stopwatch tabs
 		helpText = lipgloss.NewStyle().Foreground(mauve).Render("↑↓") +
 			lipgloss.NewStyle().Foreground(overlay0).Render("/jk:select ") +
 			lipgloss.NewStyle().Foreground(mauve).Render("space/p") +
@@ -950,7 +1130,7 @@ func (m Model) renderTimers() string {
 
 		durationMs := int64(t["duration_ms"].(float64))
 
-		// Get current remaining time (server calculates this for running timers)
+		// Get current remaining time
 		var remainingMs int64
 		if curr, ok := t["current_remaining_ms"]; ok {
 			remainingMs = int64(curr.(float64))
@@ -1033,19 +1213,14 @@ func (m Model) renderStopwatches() string {
 		label := sw["label"].(string)
 		status := sw["status"].(string)
 
-		// Get elapsed time - for running stopwatches, calculate locally for smooth UI
+		// Get elapsed time
 		var elapsedMs int64
 		if status == "running" {
-			// For running stopwatches, calculate elapsed time based on local clock
-			// for smooth millisecond updates between server refreshes
 			if startedAt, ok := sw["started_at_ms"]; ok && startedAt != nil {
 				startedAtMs := int64(startedAt.(float64))
-				// elapsed_ms is the time accumulated before this run started
 				baseElapsed := int64(sw["elapsed_ms"].(float64))
-				// Add time since start
 				elapsedMs = baseElapsed + now.UnixMilli() - startedAtMs
 			} else {
-				// Fallback to server-calculated value
 				if curr, ok := sw["current_elapsed_ms"]; ok {
 					elapsedMs = int64(curr.(float64))
 				} else {
@@ -1053,7 +1228,6 @@ func (m Model) renderStopwatches() string {
 				}
 			}
 		} else {
-			// For stopped/paused stopwatches, use server value
 			if curr, ok := sw["current_elapsed_ms"]; ok {
 				elapsedMs = int64(curr.(float64))
 			} else {
@@ -1087,6 +1261,127 @@ func (m Model) renderStopwatches() string {
 	}
 
 	return content
+}
+
+// renderAmbientSounds renders the ambient sounds configuration tab
+func (m Model) renderAmbientSounds() string {
+	var content string
+
+	// Title
+	content += "Ambient Sounds\n\n"
+
+	if len(m.userConfig.AmbientSounds) == 0 {
+		content += lipgloss.NewStyle().Foreground(red).Render("No ambient sound files found.\n")
+		content += lipgloss.NewStyle().Foreground(overlay0).Render("Place .mp3 files in ~/.veranda/sounds/ambience/\n")
+		return content
+	}
+
+	// Sort ambient sounds by filename for consistent display
+	sortedSounds := make([]config.AmbientSoundConfig, len(m.userConfig.AmbientSounds))
+	copy(sortedSounds, m.userConfig.AmbientSounds)
+	sort.Slice(sortedSounds, func(i, j int) bool {
+		return sortedSounds[i].Filename < sortedSounds[j].Filename
+	})
+
+	// Find the index of the currently selected sound in sorted list
+	selectedFilename := ""
+	if m.ambientSelectedIdx < len(m.userConfig.AmbientSounds) {
+		selectedFilename = m.userConfig.AmbientSounds[m.ambientSelectedIdx].Filename
+	}
+	selectedSortedIdx := 0
+	for i, s := range sortedSounds {
+		if s.Filename == selectedFilename {
+			selectedSortedIdx = i
+			break
+		}
+	}
+
+	// Display list
+	for i, sound := range sortedSounds {
+		// Find the original index for this sorted sound
+		originalIdx := -1
+		for j, orig := range m.userConfig.AmbientSounds {
+			if orig.Filename == sound.Filename {
+				originalIdx = j
+				break
+			}
+		}
+
+		// Selection indicator
+		prefix := "  "
+		if i == selectedSortedIdx {
+			prefix = selectedStyle.Render("> ")
+		}
+
+		// Checkbox
+		checkbox := "[ ]"
+		if sound.Enabled {
+			checkbox = "[" + lipgloss.NewStyle().Foreground(green).Render("✓") + "]"
+		}
+
+		// Filename
+		filename := sound.Filename
+		if i == selectedSortedIdx {
+			filename = lipgloss.NewStyle().Foreground(lavender).Bold(true).Render(filename)
+		} else {
+			filename = lipgloss.NewStyle().Foreground(text).Render(filename)
+		}
+
+		// Volume bar
+		volBar := renderVolumeBar(sound.Volume, 10)
+		volPercent := int(sound.Volume * 100)
+		volStr := fmt.Sprintf("%3d%%", volPercent)
+		if originalIdx == m.ambientSelectedIdx && m.editingAmbientVolume {
+			volStr = lipgloss.NewStyle().Foreground(yellow).Render(volStr)
+		}
+
+		// Test indicator
+		testIndicator := "  "
+		if m.ambientTestPlaying[sound.Filename] {
+			testIndicator = lipgloss.NewStyle().Foreground(green).Render("▶ ")
+		}
+
+		content += fmt.Sprintf("%s%s %s %s %s %s\n",
+			prefix,
+			checkbox,
+			filename,
+			volBar,
+			volStr,
+			testIndicator,
+		)
+	}
+
+	// Instructions
+	content += "\n" + lipgloss.NewStyle().Foreground(overlay0).Render(
+		"space:toggle • t:test • v:volume • s:save • r:reset") + "\n"
+
+	// Show settings message if any
+	if m.settingsMessage != "" {
+		content += "\n" + lipgloss.NewStyle().Foreground(green).Render(m.settingsMessage) + "\n"
+	}
+
+	return content
+}
+
+// renderVolumeBar creates a visual volume bar
+func renderVolumeBar(volume float64, width int) string {
+	if volume < 0 {
+		volume = 0
+	}
+	if volume > 1 {
+		volume = 1
+	}
+
+	filled := int(volume * float64(width))
+	if filled > width {
+		filled = width
+	}
+	empty := width - filled
+
+	filledBar := strings.Repeat("█", filled)
+	emptyBar := strings.Repeat("░", empty)
+
+	return progressBarStyle.Render(filledBar) + progressBarEmptyStyle.Render(emptyBar)
 }
 
 // renderPreferences renders the preferences/settings page
@@ -1145,62 +1440,21 @@ func (m Model) renderPreferences() string {
 		// Show current value with edit hint
 		soundFile := m.userConfig.TimerCompletionSound
 		content += lipgloss.NewStyle().Foreground(lavender).Render(soundFile) + "\n"
-		content += lipgloss.NewStyle().Foreground(overlay0).Render("       [e]dit") + "\n"
+		content += lipgloss.NewStyle().Foreground(overlay0).Render("       [e]dit sound") + "\n"
 	}
 
 	content += "\n"
 
-	// Ambient sound setting
-	content += "Ambient Sound\n"
-
-	if m.selectingAmbientFile {
-		// Show dropdown with available ambient files
-		content += lipgloss.NewStyle().Foreground(mauve).Render("Select ambient sound:") + "\n\n"
-
-		if len(m.availableAmbientFiles) <= 1 { // Only "shuffle" option
-			content += lipgloss.NewStyle().Foreground(red).Render("  No MP3 files found in ambience directory") + "\n"
-			content += lipgloss.NewStyle().Foreground(overlay0).Render("  Place .mp3 files in ~/.veranda/sounds/ambience/") + "\n"
-		} else {
-			// Show up to 5 files at a time with scrolling
-			maxDisplay := 5
-			startIdx := 0
-			if m.selectedAmbientIdx >= maxDisplay {
-				startIdx = m.selectedAmbientIdx - maxDisplay + 1
-			}
-			endIdx := startIdx + maxDisplay
-			if endIdx > len(m.availableAmbientFiles) {
-				endIdx = len(m.availableAmbientFiles)
-			}
-
-			for i := startIdx; i < endIdx; i++ {
-				prefix := "  "
-				if i == m.selectedAmbientIdx {
-					prefix = selectedStyle.Render("> ")
-				}
-				fileName := m.availableAmbientFiles[i]
-				// Highlight current selection
-				if i == m.selectedAmbientIdx {
-					fileName = lipgloss.NewStyle().Foreground(lavender).Bold(true).Render(fileName)
-				} else {
-					fileName = lipgloss.NewStyle().Foreground(text).Render(fileName)
-				}
-				content += prefix + fileName + "\n"
-			}
-
-			// Show count if there are more files
-			if len(m.availableAmbientFiles) > maxDisplay {
-				content += lipgloss.NewStyle().Foreground(overlay0).Render(
-					fmt.Sprintf("  (%d more files)", len(m.availableAmbientFiles)-maxDisplay)) + "\n"
-			}
-		}
-
-		content += "\n" + lipgloss.NewStyle().Foreground(overlay0).Render("↑↓:select  enter:confirm  esc:cancel") + "\n"
-	} else {
-		// Show current value with edit hint
-		ambientFile := m.userConfig.AmbientSound
-		content += lipgloss.NewStyle().Foreground(lavender).Render(ambientFile) + "\n"
-		content += lipgloss.NewStyle().Foreground(overlay0).Render("       [a]edit") + "\n"
+	// Chime Volume setting
+	content += "Chime Volume\n"
+	volBar := renderVolumeBar(m.userConfig.ChimeVolume, 10)
+	volPercent := int(m.userConfig.ChimeVolume * 100)
+	volStr := fmt.Sprintf("%d%%", volPercent)
+	if m.editingChimeVolume {
+		volStr = lipgloss.NewStyle().Foreground(yellow).Render(volStr)
 	}
+	content += fmt.Sprintf("%s %s\n", volBar, volStr)
+	content += lipgloss.NewStyle().Foreground(overlay0).Render("       [v]olume (0-9)") + "\n"
 
 	// Show settings message if any
 	if m.settingsMessage != "" {
@@ -1274,7 +1528,6 @@ func formatDuration(ms int64) string {
 }
 
 // formatStopwatch formats milliseconds as stopwatch time with milliseconds
-// Format: 0.000 -> 1:00.000 -> 1:00:00.000
 func formatStopwatch(ms int64) string {
 	if ms < 0 {
 		ms = 0
@@ -1427,7 +1680,6 @@ func renderProgressBar(progress float64, width int) string {
 
 	empty := width - filled
 
-	// Liquid filling style: ▓ = dark filled (liquid), ░ = light empty (container)
 	filledBar := ""
 	emptyBar := ""
 	for i := 0; i < filled; i++ {
@@ -1457,6 +1709,9 @@ func loadAvailableSoundFiles(soundsDir string) []string {
 			files = append(files, name)
 		}
 	}
+
+	// Sort files for consistent ordering
+	sort.Strings(files)
 
 	return files
 }
