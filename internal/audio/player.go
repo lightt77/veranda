@@ -407,3 +407,41 @@ func (p *Player) GetCurrentFile() string {
 	defer p.mutex.RUnlock()
 	return p.currentFile
 }
+
+// PlayOneShot plays a single MP3 file once asynchronously (non-blocking)
+// The filename should be just the filename (not full path), which will be resolved
+// relative to the sounds directory. Returns error if file doesn't exist.
+func (p *Player) PlayOneShot(filename string) error {
+	// Resolve full path
+	fullPath := filepath.Join(p.soundsDir, filename)
+
+	// Check if file exists
+	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+		return fmt.Errorf("sound file not found: %s", filename)
+	}
+
+	// Open the file
+	f, err := os.Open(fullPath)
+	if err != nil {
+		return fmt.Errorf("failed to open sound file: %w", err)
+	}
+
+	// Decode MP3
+	streamer, format, err := mp3.Decode(f)
+	if err != nil {
+		f.Close()
+		return fmt.Errorf("failed to decode MP3: %w", err)
+	}
+
+	// Resample to speaker's sample rate if needed
+	resampled := beep.Resample(4, format.SampleRate, p.sampleRate, streamer)
+
+	// Play asynchronously - speaker.Play is non-blocking
+	// Use a callback to close resources when done
+	speaker.Play(beep.Seq(resampled, beep.Callback(func() {
+		streamer.Close()
+		f.Close()
+	})))
+
+	return nil
+}
