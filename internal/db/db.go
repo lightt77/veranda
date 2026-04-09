@@ -4,6 +4,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/lightt77/veranda/internal/config"
 	_ "modernc.org/sqlite"
@@ -61,4 +62,24 @@ func runMigrations(db *sql.DB) error {
 // Close closes the database connection
 func (db *DB) Close() error {
 	return db.DB.Close()
+}
+
+// ClearAllData soft-deletes all data from all tables (use with caution!)
+func (db *DB) ClearAllData() error {
+	now := time.Now().Unix()
+	queries := []string{
+		"UPDATE timers SET deleted_at = ? WHERE deleted_at IS NULL",
+		"UPDATE stopwatches SET deleted_at = ? WHERE deleted_at IS NULL",
+		"DELETE FROM stopwatch_laps",
+		"UPDATE journal_entries SET deleted_at = ? WHERE deleted_at IS NULL",
+		"UPDATE scheduled_tasks SET deleted_at = ? WHERE deleted_at IS NULL",
+		"DELETE FROM settings",
+	}
+
+	for _, query := range queries {
+		if _, err := db.Exec(query, now); err != nil {
+			return fmt.Errorf("failed to clear data: %w", err)
+		}
+	}
+	return nil
 }
