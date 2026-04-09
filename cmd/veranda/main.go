@@ -63,10 +63,12 @@ func main() {
 	}
 
 	// Initialize notification service
+	var notifier *notify.Notifier
 	notifyService := notify.NewService(cfg.AppName)
 	if notify.IsSupported() {
-		notifier := notify.NewNotifier(notifyService, timerService)
+		notifier = notify.NewNotifier(notifyService, timerService)
 		notifier.Start()
+		stopwatchService.SetLapNotifier(notifier)
 		fmt.Println("Desktop notifications: enabled")
 	} else {
 		fmt.Printf("Desktop notifications: not supported on %s\n", notify.GetPlatform())
