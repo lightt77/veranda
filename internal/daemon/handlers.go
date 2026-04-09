@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/lightt77/veranda/internal/models"
 )
 
 // Health check
@@ -24,7 +26,7 @@ func (s *Server) handleGetTimers(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	respondJSON(w, http.StatusOK, timers)
+	respondJSON(w, http.StatusOK, s.enrichTimers(timers))
 }
 
 func (s *Server) handleGetRunningTimers(w http.ResponseWriter, r *http.Request) {
@@ -33,7 +35,7 @@ func (s *Server) handleGetRunningTimers(w http.ResponseWriter, r *http.Request) 
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	respondJSON(w, http.StatusOK, timers)
+	respondJSON(w, http.StatusOK, s.enrichTimers(timers))
 }
 
 func (s *Server) handleGetTimer(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +51,7 @@ func (s *Server) handleGetTimer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusOK, timer)
+	respondJSON(w, http.StatusOK, s.enrichTimer(timer))
 }
 
 type createTimerRequest struct {
@@ -158,7 +160,7 @@ func (s *Server) handleGetStopwatches(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	respondJSON(w, http.StatusOK, stopwatches)
+	respondJSON(w, http.StatusOK, s.enrichStopwatches(stopwatches))
 }
 
 func (s *Server) handleGetRunningStopwatches(w http.ResponseWriter, r *http.Request) {
@@ -167,7 +169,7 @@ func (s *Server) handleGetRunningStopwatches(w http.ResponseWriter, r *http.Requ
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	respondJSON(w, http.StatusOK, stopwatches)
+	respondJSON(w, http.StatusOK, s.enrichStopwatches(stopwatches))
 }
 
 func (s *Server) handleGetStopwatch(w http.ResponseWriter, r *http.Request) {
@@ -183,7 +185,7 @@ func (s *Server) handleGetStopwatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusOK, stopwatch)
+	respondJSON(w, http.StatusOK, s.enrichStopwatch(stopwatch))
 }
 
 type createStopwatchRequest struct {
@@ -198,7 +200,7 @@ func (s *Server) handleCreateStopwatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var stopwatch interface{}
+	var stopwatch *models.Stopwatch
 	var err error
 
 	if req.Start {
@@ -212,7 +214,7 @@ func (s *Server) handleCreateStopwatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusCreated, stopwatch)
+	respondJSON(w, http.StatusCreated, s.enrichStopwatch(stopwatch))
 }
 
 func (s *Server) handleStartStopwatch(w http.ResponseWriter, r *http.Request) {
@@ -228,7 +230,7 @@ func (s *Server) handleStartStopwatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusOK, stopwatch)
+	respondJSON(w, http.StatusOK, s.enrichStopwatch(stopwatch))
 }
 
 func (s *Server) handleStopStopwatch(w http.ResponseWriter, r *http.Request) {
@@ -244,7 +246,7 @@ func (s *Server) handleStopStopwatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusOK, stopwatch)
+	respondJSON(w, http.StatusOK, s.enrichStopwatch(stopwatch))
 }
 
 func (s *Server) handleLapStopwatch(w http.ResponseWriter, r *http.Request) {
@@ -261,7 +263,7 @@ func (s *Server) handleLapStopwatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"stopwatch": stopwatch,
+		"stopwatch": s.enrichStopwatch(stopwatch),
 		"lap":       lap,
 	})
 }
@@ -279,7 +281,7 @@ func (s *Server) handleResetStopwatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusOK, stopwatch)
+	respondJSON(w, http.StatusOK, s.enrichStopwatch(stopwatch))
 }
 
 func (s *Server) handleGetLaps(w http.ResponseWriter, r *http.Request) {
@@ -400,6 +402,78 @@ func (s *Server) handleSetSetting(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]string{"key": key, "value": req.Value})
+}
+
+// Helper methods to enrich timer responses with computed fields
+
+func (s *Server) enrichTimer(timer *models.Timer) map[string]interface{} {
+	now := time.Now()
+	currentRemaining := timer.GetCurrentRemaining(now)
+	progress := float64(0)
+	if timer.DurationMs > 0 {
+		progress = float64(timer.DurationMs-currentRemaining) / float64(timer.DurationMs)
+		if progress < 0 {
+			progress = 0
+		}
+		if progress > 1 {
+			progress = 1
+		}
+	}
+
+	return map[string]interface{}{
+		"id":                   timer.ID,
+		"label":                timer.Label,
+		"duration_ms":          timer.DurationMs,
+		"remaining_ms":         timer.RemainingMs,
+		"current_remaining_ms": currentRemaining,
+		"status":               timer.Status,
+		"started_at_ms":        timer.StartedAtMs,
+		"paused_at_ms":         timer.PausedAtMs,
+		"completed_at_ms":      timer.CompletedAtMs,
+		"progress":             progress,
+		"updated_at_ms":        timer.UpdatedAtMs,
+	}
+}
+
+func (s *Server) enrichTimers(timers []*models.Timer) []map[string]interface{} {
+	result := make([]map[string]interface{}, len(timers))
+	for i, timer := range timers {
+		result[i] = s.enrichTimer(timer)
+	}
+	return result
+}
+
+// enrichStopwatch enriches a stopwatch response with computed current elapsed time
+func (s *Server) enrichStopwatch(stopwatch *models.Stopwatch) map[string]interface{} {
+	now := time.Now()
+	currentElapsed := stopwatch.GetCurrentElapsed(now)
+
+	return map[string]interface{}{
+		"id":                 stopwatch.ID,
+		"label":              stopwatch.Label,
+		"elapsed_ms":         stopwatch.ElapsedMs,
+		"current_elapsed_ms": currentElapsed,
+		"status":             stopwatch.Status,
+		"started_at_ms":      stopwatch.StartedAtMs,
+		"stopped_at_ms":      stopwatch.StoppedAtMs,
+		"updated_at_ms":      stopwatch.UpdatedAtMs,
+	}
+}
+
+func (s *Server) enrichStopwatches(stopwatches []*models.Stopwatch) []map[string]interface{} {
+	result := make([]map[string]interface{}, len(stopwatches))
+	for i, sw := range stopwatches {
+		result[i] = s.enrichStopwatch(sw)
+	}
+	return result
+}
+
+// Daemon control handlers
+
+func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
+	respondJSON(w, http.StatusOK, map[string]string{"status": "shutting down"})
+	// Shutdown in a goroutine so we can send the response first
+	go s.StopAndExit()
 }
 
 // Ambient sound handlers
