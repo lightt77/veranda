@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/lightt77/veranda/internal/daemon"
 	"github.com/spf13/cobra"
 )
 
@@ -37,9 +36,9 @@ var journalWriteCmd = &cobra.Command{
 	Example: `  veranda journal write "Completed the project today!"
   veranda journal write`,
 	Run: func(cmd *cobra.Command, args []string) {
-		client := daemon.NewClient(getConfig().DaemonPort)
-		if !client.IsRunning() {
-			fmt.Println("Error: Daemon is not running")
+		client, err := ensureDaemon()
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
 			return
 		}
 
@@ -67,13 +66,14 @@ var journalListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all journal entries",
 	Run: func(cmd *cobra.Command, args []string) {
-		client := daemon.NewClient(getConfig().DaemonPort)
-		if !client.IsRunning() {
-			fmt.Println("Error: Daemon is not running")
+		client, err := ensureDaemon()
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
 			return
 		}
 
 		// TODO: Implement client method
+		_ = client
 		fmt.Println("List not yet implemented via API")
 	},
 }
@@ -84,13 +84,14 @@ var journalRecentCmd = &cobra.Command{
 	Short: "Show recent journal entries",
 	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		client := daemon.NewClient(getConfig().DaemonPort)
-		if !client.IsRunning() {
-			fmt.Println("Error: Daemon is not running")
+		client, err := ensureDaemon()
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
 			return
 		}
 
 		// TODO: Implement client method
+		_ = client
 		fmt.Println("Recent entries not yet implemented via API")
 	},
 }

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/lightt77/veranda/internal/daemon"
 	"github.com/lightt77/veranda/internal/service"
 	"github.com/spf13/cobra"
 )
@@ -39,9 +38,9 @@ var stopwatchListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all stopwatches",
 	Run: func(cmd *cobra.Command, args []string) {
-		client := daemon.NewClient(getConfig().DaemonPort)
-		if !client.IsRunning() {
-			fmt.Println("Error: Daemon is not running")
+		client, err := ensureDaemon()
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
 			return
 		}
 
@@ -78,9 +77,9 @@ var stopwatchStartCmd = &cobra.Command{
 	Short: "Start a new stopwatch",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		client := daemon.NewClient(getConfig().DaemonPort)
-		if !client.IsRunning() {
-			fmt.Println("Error: Daemon is not running")
+		client, err := ensureDaemon()
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
 			return
 		}
 
@@ -102,9 +101,9 @@ var stopwatchStopCmd = &cobra.Command{
 	Short: "Stop a stopwatch",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		client := daemon.NewClient(getConfig().DaemonPort)
-		if !client.IsRunning() {
-			fmt.Println("Error: Daemon is not running")
+		client, err := ensureDaemon()
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
 			return
 		}
 
@@ -130,9 +129,9 @@ var stopwatchLapCmd = &cobra.Command{
 	Short: "Record a lap",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		client := daemon.NewClient(getConfig().DaemonPort)
-		if !client.IsRunning() {
-			fmt.Println("Error: Daemon is not running")
+		client, err := ensureDaemon()
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
 			return
 		}
 
@@ -143,6 +142,7 @@ var stopwatchLapCmd = &cobra.Command{
 		}
 
 		// Note: This would need a client method
+		_ = client
 		fmt.Printf("Lap recorded for stopwatch %d\n", id)
 	},
 }
