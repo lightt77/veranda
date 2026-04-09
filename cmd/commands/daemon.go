@@ -73,6 +73,14 @@ func runDaemon(cmd *cobra.Command, args []string) {
 		fmt.Fprintf(os.Stderr, "Error creating sounds directory: %v\n", err)
 		os.Exit(1)
 	}
+	if err := os.MkdirAll(cfg.ChimesDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating chimes directory: %v\n", err)
+		os.Exit(1)
+	}
+	if err := os.MkdirAll(cfg.AmbienceDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating ambience directory: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Open database
 	database, err := db.Open(cfg)
