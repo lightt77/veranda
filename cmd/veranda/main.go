@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/lightt77/veranda/internal/audio"
 	"github.com/lightt77/veranda/internal/config"
@@ -123,10 +122,8 @@ func main() {
 		fmt.Println("Tip: Add MP3 files to the sounds directory for ambient playback")
 	}
 
-	fmt.Println("\nDaemon is running. Press Ctrl+C to stop.")
+	fmt.Println("\nDaemon is running. API available at http://localhost:17342")
 
-	// Keep running
-	for {
-		time.Sleep(1 * time.Second)
-	}
+	// Keep the daemon running
+	select {}
 }
