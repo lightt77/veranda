@@ -18,6 +18,12 @@ import (
 	"github.com/lightt77/veranda/internal/config"
 )
 
+var (
+	speakerOnce       sync.Once
+	speakerInitErr    error
+	speakerSampleRate beep.SampleRate
+)
+
 // Player manages ambient sound playback
 type Player struct {
 	config      *config.AppConfig
@@ -37,12 +43,19 @@ type Player struct {
 	mutex       sync.RWMutex
 }
 
+// initSpeaker initializes the speaker once (thread-safe)
+func initSpeaker() error {
+	speakerOnce.Do(func() {
+		speakerSampleRate = beep.SampleRate(44100)
+		speakerInitErr = speaker.Init(speakerSampleRate, speakerSampleRate.N(time.Second/10))
+	})
+	return speakerInitErr
+}
+
 // NewPlayer creates a new audio player
 func NewPlayer(cfg *config.AppConfig) (*Player, error) {
-	// Initialize speaker with default sample rate
-	sampleRate := beep.SampleRate(44100)
-	err := speaker.Init(sampleRate, sampleRate.N(time.Second/10))
-	if err != nil {
+	// Initialize speaker once (thread-safe)
+	if err := initSpeaker(); err != nil {
 		return nil, fmt.Errorf("failed to initialize speaker: %w", err)
 	}
 
@@ -52,7 +65,7 @@ func NewPlayer(cfg *config.AppConfig) (*Player, error) {
 		chimesDir:   cfg.ChimesDir,
 		ambienceDir: cfg.AmbienceDir,
 		volume:      0.5, // Default 50% volume
-		sampleRate:  sampleRate,
+		sampleRate:  speakerSampleRate,
 		stopChan:    make(chan struct{}),
 	}
 
