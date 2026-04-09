@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/lightt77/veranda/internal/config"
+	"github.com/lightt77/veranda/internal/db"
 )
 
 func main() {
@@ -21,6 +22,14 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error creating logs directory: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Open database
+	database, err := db.Open(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+		os.Exit(1)
+	}
+	defer database.Close()
 
 	fmt.Printf("Veranda %s\n", cfg.AppVersion)
 	fmt.Printf("Data directory: %s\n", cfg.DataDir)
