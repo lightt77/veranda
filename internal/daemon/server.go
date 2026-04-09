@@ -221,8 +221,8 @@ func (s *Server) monitorIdle() {
 		case <-ticker.C:
 			if s.IsIdle() {
 				fmt.Println("Daemon idle - no active timers or ambient sound. Shutting down...")
-				// Graceful shutdown
-				go s.Stop()
+				// Graceful shutdown and exit
+				go s.StopAndExit()
 				return
 			}
 		}
@@ -244,9 +244,13 @@ func (s *Server) Stop() error {
 	err := s.httpServer.Shutdown(ctx)
 	s.wg.Wait()
 
-	// Exit the process
-	os.Exit(0)
+	return err
+}
 
+// StopAndExit gracefully shuts down and exits the process
+func (s *Server) StopAndExit() error {
+	err := s.Stop()
+	os.Exit(0)
 	return err
 }
 
