@@ -42,7 +42,7 @@ func setupTestDaemon(t *testing.T) (*daemon.Server, *config.AppConfig, func()) {
 	settingsService := service.NewSettingsService(settingsRepo)
 
 	// Ambient service may fail without audio hardware, that's ok
-	ambientService, _ := audio.NewAmbientService(cfg, timerService, stopwatchService)
+	ambientService, _ := audio.NewAmbientService(cfg, cfg.DataDir, timerService, stopwatchService)
 
 	server := daemon.NewServer(
 		cfg,

@@ -27,6 +27,7 @@ var (
 // Player manages ambient sound playback
 type Player struct {
 	config      *config.AppConfig
+	configDir   string // For reloading user config
 	soundsDir   string
 	chimesDir   string
 	ambienceDir string
@@ -53,7 +54,7 @@ func initSpeaker() error {
 }
 
 // NewPlayer creates a new audio player
-func NewPlayer(cfg *config.AppConfig) (*Player, error) {
+func NewPlayer(cfg *config.AppConfig, configDir string) (*Player, error) {
 	// Initialize speaker once (thread-safe)
 	if err := initSpeaker(); err != nil {
 		return nil, fmt.Errorf("failed to initialize speaker: %w", err)
@@ -61,10 +62,11 @@ func NewPlayer(cfg *config.AppConfig) (*Player, error) {
 
 	player := &Player{
 		config:      cfg,
+		configDir:   configDir,
 		soundsDir:   cfg.SoundsDir,
 		chimesDir:   cfg.ChimesDir,
 		ambienceDir: cfg.AmbienceDir,
-		volume:      0.8, // Default 80% volume (louder for testing)
+		volume:      0.8, // Default 80% volume
 		sampleRate:  speakerSampleRate,
 		stopChan:    make(chan struct{}),
 	}
@@ -171,6 +173,7 @@ func (p *Player) SetVolume(vol float64) {
 }
 
 // Play starts playing ambient sounds with optional shuffle
+// If user config specifies a specific ambient sound (not "shuffle"), only that file will be played
 func (p *Player) Play(shuffle bool) error {
 	p.mutex.Lock()
 
@@ -180,7 +183,12 @@ func (p *Player) Play(shuffle bool) error {
 	}
 
 	ambienceDir := p.ambienceDir
+	configDir := p.configDir
 	p.mutex.Unlock()
+
+	// Load user config to check ambient sound preference
+	userConfig := config.LoadUserConfig(configDir)
+	selectedAmbient := userConfig.AmbientSound
 
 	// Get sound files WITHOUT holding the lock (avoid deadlock with getSoundFiles)
 	files, err := p.getSoundFilesFromDir(ambienceDir)
@@ -190,6 +198,21 @@ func (p *Player) Play(shuffle bool) error {
 
 	if len(files) == 0 {
 		return fmt.Errorf("no audio files found in ambience directory: %s", ambienceDir)
+	}
+
+	// If a specific ambient sound is selected (not "shuffle"), filter to only that file
+	if selectedAmbient != "" && selectedAmbient != "shuffle" {
+		var filteredFiles []string
+		for _, f := range files {
+			if filepath.Base(f) == selectedAmbient {
+				filteredFiles = append(filteredFiles, f)
+				break
+			}
+		}
+		if len(filteredFiles) > 0 {
+			files = filteredFiles
+			shuffle = false // Don't shuffle when playing a specific file
+		}
 	}
 
 	if shuffle {
@@ -314,9 +337,22 @@ func (p *Player) playFile(filename string) error {
 	// Resample to speaker's sample rate if needed
 	resampled := beep.Resample(4, format.SampleRate, p.sampleRate, streamer)
 
-	// Play (without volume control - using direct playback like chimes)
+	// Create volume control wrapper for fade in/out
+	// Start at 0 volume, FadeIn() will gradually increase it
+	p.mutex.Lock()
+	volCtrl := &effects.Volume{
+		Streamer: resampled,
+		Base:     2,
+		Volume:   -60, // Start silent (0 volume in dB)
+		Silent:   true,
+	}
+	p.volumeCtrl = volCtrl
+	p.currentFile = filename
+	p.mutex.Unlock()
+
+	// Play with volume control
 	done := make(chan struct{})
-	speaker.Play(beep.Seq(resampled, beep.Callback(func() {
+	speaker.Play(beep.Seq(volCtrl, beep.Callback(func() {
 		streamer.Close()
 		f.Close()
 		close(done)
