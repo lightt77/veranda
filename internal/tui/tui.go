@@ -502,11 +502,17 @@ func (m Model) renderRandomStarfield(starAreaHeight int) string {
 
 // renderRealisticStarfield renders the realistic starfield
 func (m Model) renderRealisticStarfield(starAreaHeight int) string {
-	rows := make([]string, starAreaHeight)
+	// Use a grid to track characters and their styles separately
+	// grid[y][x] = {char, style}
+	type Cell struct {
+		char  string
+		color lipgloss.Color
+		isSet bool
+	}
 
-	// Initialize empty rows
-	for y := 0; y < starAreaHeight; y++ {
-		rows[y] = strings.Repeat(" ", m.width)
+	grid := make([][]Cell, starAreaHeight)
+	for y := range grid {
+		grid[y] = make([]Cell, m.width)
 	}
 
 	// Get visible objects
@@ -526,19 +532,13 @@ func (m Model) renderRealisticStarfield(starAreaHeight int) string {
 			// Get color
 			color := starfield.GetObjectColor(obj.Object, obj.Brightness)
 
-			// Render the symbol with color
-			styled := lipgloss.NewStyle().Foreground(color).Render(symbol)
-
-			// Place in row (this is simplified - for multi-char symbols, would need more care)
-			row := rows[obj.ScreenY]
-			if obj.ScreenX < len(row) {
-				// Replace character at position
-				before := row[:obj.ScreenX]
-				after := ""
-				if obj.ScreenX+len(symbol) < len(row) {
-					after = row[obj.ScreenX+len(symbol):]
+			// Place symbol in grid (single character)
+			if len(symbol) > 0 {
+				grid[obj.ScreenY][obj.ScreenX] = Cell{
+					char:  string(symbol[0]),
+					color: color,
+					isSet: true,
 				}
-				rows[obj.ScreenY] = before + styled + after
 				occupiedPositions[[2]int{obj.ScreenX, obj.ScreenY}] = true
 			}
 		}
@@ -555,31 +555,53 @@ func (m Model) renderRealisticStarfield(starAreaHeight int) string {
 				nameX := obj.ScreenX + 2
 				nameY := obj.ScreenY
 
+				// Get shortened name
+				name := obj.Object.Name
+				if len(name) > 8 {
+					name = name[:7] + "."
+				}
+
 				// Check if there's enough space and position isn't occupied
-				if nameX < m.width-5 && nameY < starAreaHeight && !occupiedPositions[[2]int{nameX, nameY}] {
-					// Get shortened name (first word only for space)
-					name := obj.Object.Name
-					if len(name) > 8 {
-						name = name[:7] + "."
+				if nameX < m.width-len(name) && nameY < starAreaHeight {
+					canPlace := true
+					for i := 0; i < len(name) && nameX+i < m.width; i++ {
+						if occupiedPositions[[2]int{nameX + i, nameY}] || grid[nameY][nameX+i].isSet {
+							canPlace = false
+							break
+						}
 					}
 
-					// Render name with subtle color
-					nameStyle := lipgloss.NewStyle().Foreground(overlay0)
-					styledName := nameStyle.Render(name)
-
-					// Place name in row
-					row := rows[nameY]
-					if nameX+len(name) < len(row) {
-						before := row[:nameX]
-						after := ""
-						if nameX+len(name) < len(row) {
-							after = row[nameX+len(name):]
+					if canPlace {
+						// Place name characters in grid
+						for i, ch := range name {
+							if nameX+i < m.width {
+								grid[nameY][nameX+i] = Cell{
+									char:  string(ch),
+									color: overlay0,
+									isSet: true,
+								}
+							}
 						}
-						rows[nameY] = before + styledName + after
 					}
 				}
 			}
 		}
+	}
+
+	// Build output rows
+	rows := make([]string, starAreaHeight)
+	for y := 0; y < starAreaHeight; y++ {
+		var row strings.Builder
+		for x := 0; x < m.width; x++ {
+			cell := grid[y][x]
+			if cell.isSet {
+				style := lipgloss.NewStyle().Foreground(cell.color)
+				row.WriteString(style.Render(cell.char))
+			} else {
+				row.WriteString(" ")
+			}
+		}
+		rows[y] = row.String()
 	}
 
 	return strings.Join(rows, "\n")
