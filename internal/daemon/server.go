@@ -1,0 +1,170 @@
+// Package daemon provides the HTTP server for cross-process communication.
+package daemon
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/lightt77/veranda/internal/audio"
+	"github.com/lightt77/veranda/internal/config"
+	"github.com/lightt77/veranda/internal/service"
+)
+
+// Server represents the HTTP daemon server
+type Server struct {
+	router           *chi.Mux
+	httpServer       *http.Server
+	config           *config.AppConfig
+	timerService     *service.TimerService
+	stopwatchService *service.StopwatchService
+	journalService   *service.JournalService
+	settingsService  *service.SettingsService
+	ambientService   *audio.AmbientService
+}
+
+// NewServer creates a new daemon server
+func NewServer(
+	cfg *config.AppConfig,
+	timerService *service.TimerService,
+	stopwatchService *service.StopwatchService,
+	journalService *service.JournalService,
+	settingsService *service.SettingsService,
+	ambientService *audio.AmbientService,
+) *Server {
+	r := chi.NewRouter()
+
+	s := &Server{
+		router:           r,
+		config:           cfg,
+		timerService:     timerService,
+		stopwatchService: stopwatchService,
+		journalService:   journalService,
+		settingsService:  settingsService,
+		ambientService:   ambientService,
+	}
+
+	s.setupRoutes()
+	return s
+}
+
+// setupRoutes configures all API routes
+func (s *Server) setupRoutes() {
+	// Middleware
+	s.router.Use(jsonContentType)
+
+	// Health check
+	s.router.Get("/health", s.handleHealth)
+
+	// Timer routes
+	s.router.Route("/timers", func(r chi.Router) {
+		r.Get("/", s.handleGetTimers)
+		r.Post("/", s.handleCreateTimer)
+		r.Get("/running", s.handleGetRunningTimers)
+		r.Route("/{id}", func(r chi.Router) {
+			r.Get("/", s.handleGetTimer)
+			r.Post("/start", s.handleStartTimer)
+			r.Post("/pause", s.handlePauseTimer)
+			r.Post("/stop", s.handlePauseTimer) // Alias
+			r.Post("/complete", s.handleCompleteTimer)
+			r.Delete("/", s.handleDeleteTimer)
+		})
+	})
+
+	// Stopwatch routes
+	s.router.Route("/stopwatches", func(r chi.Router) {
+		r.Get("/", s.handleGetStopwatches)
+		r.Post("/", s.handleCreateStopwatch)
+		r.Get("/running", s.handleGetRunningStopwatches)
+		r.Route("/{id}", func(r chi.Router) {
+			r.Get("/", s.handleGetStopwatch)
+			r.Get("/laps", s.handleGetLaps)
+			r.Post("/start", s.handleStartStopwatch)
+			r.Post("/stop", s.handleStopStopwatch)
+			r.Post("/lap", s.handleLapStopwatch)
+			r.Post("/reset", s.handleResetStopwatch)
+			r.Delete("/", s.handleDeleteStopwatch)
+		})
+	})
+
+	// Journal routes
+	s.router.Route("/journal", func(r chi.Router) {
+		r.Get("/", s.handleGetJournalEntries)
+		r.Post("/", s.handleCreateJournalEntry)
+		r.Get("/recent", s.handleGetRecentEntries)
+	})
+
+	// Settings routes
+	s.router.Route("/settings", func(r chi.Router) {
+		r.Get("/", s.handleGetSettings)
+		r.Get("/{key}", s.handleGetSetting)
+		r.Put("/{key}", s.handleSetSetting)
+	})
+
+	// Ambient sound routes
+	s.router.Route("/ambient", func(r chi.Router) {
+		r.Get("/status", s.handleAmbientStatus)
+		r.Post("/play", s.handleAmbientPlay)
+		r.Post("/stop", s.handleAmbientStop)
+		r.Put("/volume", s.handleAmbientSetVolume)
+	})
+}
+
+// Start starts the HTTP server
+func (s *Server) Start() error {
+	addr := fmt.Sprintf("localhost:%d", s.config.DaemonPort)
+	s.httpServer = &http.Server{
+		Addr:    addr,
+		Handler: s.router,
+	}
+
+	fmt.Printf("Daemon server starting on %s\n", addr)
+	go func() {
+		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			fmt.Printf("Daemon server error: %v\n", err)
+		}
+	}()
+
+	// Give the server a moment to start
+	time.Sleep(100 * time.Millisecond)
+	return nil
+}
+
+// Stop gracefully shuts down the server
+func (s *Server) Stop() error {
+	if s.httpServer == nil {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	return s.httpServer.Shutdown(ctx)
+}
+
+// Middleware
+func jsonContentType(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// Helper functions
+func respondJSON(w http.ResponseWriter, status int, data interface{}) {
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(data)
+}
+
+func respondError(w http.ResponseWriter, status int, message string) {
+	respondJSON(w, status, map[string]string{"error": message})
+}
+
+func parseID(r *http.Request) (int64, error) {
+	idStr := chi.URLParam(r, "id")
+	return strconv.ParseInt(idStr, 10, 64)
+}
