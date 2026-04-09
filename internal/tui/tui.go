@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbletea"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lightt77/veranda/internal/daemon"
 	"github.com/lightt77/veranda/internal/repository"
@@ -555,23 +555,41 @@ func (m Model) renderRealisticStarfield(starAreaHeight int) string {
 	if m.showObjectNames {
 		for _, obj := range objects {
 			if obj.ScreenY >= 0 && obj.ScreenY < starAreaHeight &&
-				obj.ScreenX >= 0 && obj.ScreenX < m.width &&
-				obj.Brightness > 0.3 { // Only show names for brighter objects
+				obj.ScreenX >= 0 && obj.ScreenX < m.width {
 
-				// Place name to the right of the object
-				nameX := obj.ScreenX + 2
-				nameY := obj.ScreenY
-
-				// Get shortened name
 				name := obj.Object.Name
-				if len(name) > 8 {
-					name = name[:7] + "."
+				nameRunes := []rune(name)
+				nameLen := len(nameRunes) // Use rune count for proper UTF-8 handling
+
+				// Try different positions around the object to find open space
+				// Priority: right, left, below, above, then diagonals, then further away
+				positions := [][2]int{
+					{obj.ScreenX + 2, obj.ScreenY},               // right
+					{obj.ScreenX - nameLen - 1, obj.ScreenY},     // left
+					{obj.ScreenX - nameLen/2, obj.ScreenY + 1},   // below (centered)
+					{obj.ScreenX - nameLen/2, obj.ScreenY - 1},   // above (centered)
+					{obj.ScreenX + 2, obj.ScreenY + 1},           // below-right
+					{obj.ScreenX - nameLen - 1, obj.ScreenY + 1}, // below-left
+					{obj.ScreenX + 2, obj.ScreenY - 1},           // above-right
+					{obj.ScreenX - nameLen - 1, obj.ScreenY - 1}, // above-left
+					{obj.ScreenX + 3, obj.ScreenY},               // further right
+					{obj.ScreenX - nameLen - 2, obj.ScreenY},     // further left
+					{obj.ScreenX - nameLen/2, obj.ScreenY + 2},   // further below
+					{obj.ScreenX - nameLen/2, obj.ScreenY - 2},   // further above
 				}
 
-				// Check if there's enough space and position isn't occupied
-				if nameX < m.width-len(name) && nameY < starAreaHeight {
+				for _, pos := range positions {
+					nameX := pos[0]
+					nameY := pos[1]
+
+					// Check if position is within bounds
+					if nameX < 0 || nameX+nameLen > m.width || nameY < 0 || nameY >= starAreaHeight {
+						continue
+					}
+
+					// Check if there's enough space and position isn't occupied
 					canPlace := true
-					for i := 0; i < len(name) && nameX+i < m.width; i++ {
+					for i := 0; i < nameLen && nameX+i < m.width; i++ {
 						if occupiedPositions[[2]int{nameX + i, nameY}] || grid[nameY][nameX+i].isSet {
 							canPlace = false
 							break
@@ -581,7 +599,7 @@ func (m Model) renderRealisticStarfield(starAreaHeight int) string {
 					if canPlace {
 						// Place name characters in grid
 						colOffset := 0
-						for _, ch := range name {
+						for _, ch := range nameRunes {
 							if nameX+colOffset < m.width {
 								grid[nameY][nameX+colOffset] = Cell{
 									char:  string(ch),
@@ -591,6 +609,7 @@ func (m Model) renderRealisticStarfield(starAreaHeight int) string {
 								colOffset++
 							}
 						}
+						break // Successfully placed, stop trying other positions
 					}
 				}
 			}
