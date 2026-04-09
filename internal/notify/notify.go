@@ -7,20 +7,26 @@ import (
 	"sync"
 
 	"github.com/gen2brain/beeep"
+	"github.com/lightt77/veranda/internal/audio"
+	"github.com/lightt77/veranda/internal/config"
 )
 
 // Service handles desktop notifications
 type Service struct {
-	enabled bool
-	mutex   sync.RWMutex
-	appName string
+	enabled     bool
+	mutex       sync.RWMutex
+	appName     string
+	audioPlayer *audio.Player
+	userConfig  *config.UserConfig
 }
 
 // NewService creates a new notification service
-func NewService(appName string) *Service {
+func NewService(appName string, audioPlayer *audio.Player, userConfig *config.UserConfig) *Service {
 	return &Service{
-		enabled: true,
-		appName: appName,
+		enabled:     true,
+		appName:     appName,
+		audioPlayer: audioPlayer,
+		userConfig:  userConfig,
 	}
 }
 
@@ -71,6 +77,31 @@ func (s *Service) Alert(title, message string) error {
 // Beep plays a beep sound
 func (s *Service) Beep() error {
 	return beeep.Beep(beeep.DefaultFreq, beeep.DefaultDuration)
+}
+
+// PlayTimerCompletionSound plays the configured timer completion sound
+// Falls back to system beep if sound file doesn't exist or audio player is unavailable
+func (s *Service) PlayTimerCompletionSound() error {
+	s.mutex.RLock()
+	if !s.enabled {
+		s.mutex.RUnlock()
+		return nil
+	}
+	audioPlayer := s.audioPlayer
+	userConfig := s.userConfig
+	s.mutex.RUnlock()
+
+	// If we have an audio player and config, try to play the configured sound
+	if audioPlayer != nil && userConfig != nil {
+		soundFile := userConfig.TimerCompletionSound
+		if err := audioPlayer.PlayOneShot(soundFile); err == nil {
+			return nil // Sound played successfully
+		}
+		// Fall through to beep on error
+	}
+
+	// Fallback to system beep
+	return s.Beep()
 }
 
 // TimerCompletion notifies that a timer has completed
