@@ -168,3 +168,8 @@ func parseID(r *http.Request) (int64, error) {
 	idStr := chi.URLParam(r, "id")
 	return strconv.ParseInt(idStr, 10, 64)
 }
+
+// GetRouter returns the chi router for testing
+func (s *Server) GetRouter() http.Handler {
+	return s.router
+}
