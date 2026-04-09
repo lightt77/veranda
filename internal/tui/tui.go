@@ -62,13 +62,17 @@ type Model struct {
 	showObjectNames bool // Toggle to show/hide celestial object names
 
 	// Preferences
-	userConfig          *config.UserConfig
-	configDir           string
-	chimesDir           string
-	settingsMessage     string
-	selectingSoundFile  bool // dropdown mode for selecting sound file
-	availableSoundFiles []string
-	selectedSoundIdx    int
+	userConfig            *config.UserConfig
+	configDir             string
+	chimesDir             string
+	ambienceDir           string
+	settingsMessage       string
+	selectingSoundFile    bool // dropdown mode for selecting chime sound file
+	selectingAmbientFile  bool // dropdown mode for selecting ambient sound file
+	availableSoundFiles   []string
+	availableAmbientFiles []string
+	selectedSoundIdx      int
+	selectedAmbientIdx    int
 }
 
 // Catppuccin Mocha Color Palette
@@ -183,24 +187,28 @@ func New(port int, citiesRepo *repository.CitiesRepository) Model {
 	homeDir, _ := os.UserHomeDir()
 	configDir := filepath.Join(homeDir, config.DefaultDataDir)
 	chimesDir := filepath.Join(homeDir, config.DefaultChimesDir)
+	ambienceDir := filepath.Join(homeDir, config.DefaultAmbienceDir)
 	userConfig := config.LoadUserConfig(configDir)
 
-	// Load available sound files from chimes directory
+	// Load available sound files from chimes and ambience directories
 	availableSounds := loadAvailableSoundFiles(chimesDir)
+	availableAmbience := append([]string{"shuffle"}, loadAvailableSoundFiles(ambienceDir)...)
 
 	return Model{
-		client:              daemon.NewClient(port),
-		activeTab:           0,
-		lastUpdate:          time.Now(),
-		starfieldMode:       ModeRandom, // Default to random mode
-		randomStarfield:     starfield.NewRandomStarfield(),
-		realisticStarfield:  starfield.NewRealisticStarfield(observer),
-		citiesRepo:          citiesRepo,
-		currentCity:         defaultCity,
-		userConfig:          userConfig,
-		configDir:           configDir,
-		chimesDir:           chimesDir,
-		availableSoundFiles: availableSounds,
+		client:                daemon.NewClient(port),
+		activeTab:             0,
+		lastUpdate:            time.Now(),
+		starfieldMode:         ModeRandom, // Default to random mode
+		randomStarfield:       starfield.NewRandomStarfield(),
+		realisticStarfield:    starfield.NewRealisticStarfield(observer),
+		citiesRepo:            citiesRepo,
+		currentCity:           defaultCity,
+		userConfig:            userConfig,
+		configDir:             configDir,
+		chimesDir:             chimesDir,
+		ambienceDir:           ambienceDir,
+		availableSoundFiles:   availableSounds,
+		availableAmbientFiles: availableAmbience,
 	}
 }
 
@@ -386,13 +394,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showObjectNames = !m.showObjectNames
 		case "e":
 			// Edit timer completion sound file (only in preferences tab)
-			if m.activeTab == 2 && !m.selectingSoundFile {
+			if m.activeTab == 2 && !m.selectingSoundFile && !m.selectingAmbientFile {
 				m.selectingSoundFile = true
 				// Find current sound file index
 				m.selectedSoundIdx = 0
 				for i, f := range m.availableSoundFiles {
 					if f == m.userConfig.TimerCompletionSound {
 						m.selectedSoundIdx = i
+						break
+					}
+				}
+			}
+		case "a":
+			// Edit ambient sound file (only in preferences tab)
+			if m.activeTab == 2 && !m.selectingSoundFile && !m.selectingAmbientFile {
+				m.selectingAmbientFile = true
+				// Find current ambient file index
+				m.selectedAmbientIdx = 0
+				for i, f := range m.availableAmbientFiles {
+					if f == m.userConfig.AmbientSound {
+						m.selectedAmbientIdx = i
 						break
 					}
 				}
@@ -422,6 +443,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "down", "j":
 				if m.selectedSoundIdx < len(m.availableSoundFiles)-1 {
 					m.selectedSoundIdx++
+				}
+			}
+		}
+
+		// Handle dropdown navigation when selecting ambient file
+		if m.selectingAmbientFile {
+			switch msg.String() {
+			case "esc":
+				m.selectingAmbientFile = false
+			case "enter":
+				// Save the selected ambient file
+				if m.selectedAmbientIdx < len(m.availableAmbientFiles) {
+					m.userConfig.AmbientSound = m.availableAmbientFiles[m.selectedAmbientIdx]
+					if err := m.userConfig.Save(m.configDir); err != nil {
+						m.settingsMessage = fmt.Sprintf("Error saving: %v", err)
+					} else {
+						m.settingsMessage = "Settings saved!"
+					}
+				}
+				m.selectingAmbientFile = false
+			case "up", "k":
+				if m.selectedAmbientIdx > 0 {
+					m.selectedAmbientIdx--
+				}
+			case "down", "j":
+				if m.selectedAmbientIdx < len(m.availableAmbientFiles)-1 {
+					m.selectedAmbientIdx++
 				}
 			}
 		}
@@ -831,12 +879,23 @@ func (m Model) renderContent() string {
 			lipgloss.NewStyle().Foreground(overlay0).Render(":cancel")
 	} else if m.activeTab == 2 {
 		// Preferences tab help (normal mode)
-		helpText = lipgloss.NewStyle().Foreground(mauve).Render("e") +
-			lipgloss.NewStyle().Foreground(overlay0).Render(":edit ") +
-			lipgloss.NewStyle().Foreground(mauve).Render("tab") +
-			lipgloss.NewStyle().Foreground(overlay0).Render(":switch ") +
-			lipgloss.NewStyle().Foreground(mauve).Render("q") +
-			lipgloss.NewStyle().Foreground(overlay0).Render(":quit")
+		if m.selectingSoundFile || m.selectingAmbientFile {
+			helpText = lipgloss.NewStyle().Foreground(mauve).Render("↑↓") +
+				lipgloss.NewStyle().Foreground(overlay0).Render("/jk:select ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("enter") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":confirm ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("esc") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":cancel")
+		} else {
+			helpText = lipgloss.NewStyle().Foreground(mauve).Render("e") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":chime ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("a") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":ambient ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("tab") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":switch ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("q") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":quit")
+		}
 	} else {
 		// Timer/stopwatch tab help
 		helpText = lipgloss.NewStyle().Foreground(mauve).Render("↑↓") +
@@ -1087,6 +1146,60 @@ func (m Model) renderPreferences() string {
 		soundFile := m.userConfig.TimerCompletionSound
 		content += lipgloss.NewStyle().Foreground(lavender).Render(soundFile) + "\n"
 		content += lipgloss.NewStyle().Foreground(overlay0).Render("       [e]dit") + "\n"
+	}
+
+	content += "\n"
+
+	// Ambient sound setting
+	content += "Ambient Sound\n"
+
+	if m.selectingAmbientFile {
+		// Show dropdown with available ambient files
+		content += lipgloss.NewStyle().Foreground(mauve).Render("Select ambient sound:") + "\n\n"
+
+		if len(m.availableAmbientFiles) <= 1 { // Only "shuffle" option
+			content += lipgloss.NewStyle().Foreground(red).Render("  No MP3 files found in ambience directory") + "\n"
+			content += lipgloss.NewStyle().Foreground(overlay0).Render("  Place .mp3 files in ~/.veranda/sounds/ambience/") + "\n"
+		} else {
+			// Show up to 5 files at a time with scrolling
+			maxDisplay := 5
+			startIdx := 0
+			if m.selectedAmbientIdx >= maxDisplay {
+				startIdx = m.selectedAmbientIdx - maxDisplay + 1
+			}
+			endIdx := startIdx + maxDisplay
+			if endIdx > len(m.availableAmbientFiles) {
+				endIdx = len(m.availableAmbientFiles)
+			}
+
+			for i := startIdx; i < endIdx; i++ {
+				prefix := "  "
+				if i == m.selectedAmbientIdx {
+					prefix = selectedStyle.Render("> ")
+				}
+				fileName := m.availableAmbientFiles[i]
+				// Highlight current selection
+				if i == m.selectedAmbientIdx {
+					fileName = lipgloss.NewStyle().Foreground(lavender).Bold(true).Render(fileName)
+				} else {
+					fileName = lipgloss.NewStyle().Foreground(text).Render(fileName)
+				}
+				content += prefix + fileName + "\n"
+			}
+
+			// Show count if there are more files
+			if len(m.availableAmbientFiles) > maxDisplay {
+				content += lipgloss.NewStyle().Foreground(overlay0).Render(
+					fmt.Sprintf("  (%d more files)", len(m.availableAmbientFiles)-maxDisplay)) + "\n"
+			}
+		}
+
+		content += "\n" + lipgloss.NewStyle().Foreground(overlay0).Render("↑↓:select  enter:confirm  esc:cancel") + "\n"
+	} else {
+		// Show current value with edit hint
+		ambientFile := m.userConfig.AmbientSound
+		content += lipgloss.NewStyle().Foreground(lavender).Render(ambientFile) + "\n"
+		content += lipgloss.NewStyle().Foreground(overlay0).Render("       [a]edit") + "\n"
 	}
 
 	// Show settings message if any
