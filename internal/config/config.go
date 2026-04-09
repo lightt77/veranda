@@ -25,9 +25,11 @@ const (
 
 // Default paths (relative to home directory)
 const (
-	DefaultDataDir   = ".veranda/data"
-	DefaultLogsDir   = ".veranda/logs"
-	DefaultSoundsDir = ".veranda/sounds"
+	DefaultDataDir     = ".veranda/data"
+	DefaultLogsDir     = ".veranda/logs"
+	DefaultSoundsDir   = ".veranda/sounds"
+	DefaultChimesDir   = ".veranda/sounds/chimes"
+	DefaultAmbienceDir = ".veranda/sounds/ambience"
 )
 
 // Database
@@ -50,11 +52,13 @@ func Config() *AppConfig {
 	homeDir, _ := os.UserHomeDir()
 
 	return &AppConfig{
-		AppName:    AppName,
-		AppVersion: AppVersion,
-		DataDir:    filepath.Join(homeDir, DefaultDataDir),
-		LogsDir:    filepath.Join(homeDir, DefaultLogsDir),
-		SoundsDir:  filepath.Join(homeDir, DefaultSoundsDir),
+		AppName:     AppName,
+		AppVersion:  AppVersion,
+		DataDir:     filepath.Join(homeDir, DefaultDataDir),
+		LogsDir:     filepath.Join(homeDir, DefaultLogsDir),
+		SoundsDir:   filepath.Join(homeDir, DefaultSoundsDir),
+		ChimesDir:   filepath.Join(homeDir, DefaultChimesDir),
+		AmbienceDir: filepath.Join(homeDir, DefaultAmbienceDir),
 		DatabasePath: filepath.Join(
 			filepath.Join(homeDir, DefaultDataDir),
 			DatabaseFileName,
@@ -70,6 +74,8 @@ type AppConfig struct {
 	DataDir      string
 	LogsDir      string
 	SoundsDir    string
+	ChimesDir    string
+	AmbienceDir  string
 	DatabasePath string
 	DaemonPort   int
 }
