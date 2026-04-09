@@ -97,20 +97,21 @@ func runDaemon(cmd *cobra.Command, args []string) {
 
 	// Initialize ambient sound service
 	var ambientService *audio.AmbientService
+	var notifyAudioPlayer *audio.Player
 	ambientService, err = audio.NewAmbientService(cfg, timerService, stopwatchService)
 	if err != nil {
 		fmt.Printf("Note: Ambient sound not available: %v\n", err)
+		// Create standalone player for notifications if ambient fails
+		notifyAudioPlayer, err = audio.NewPlayer(cfg)
+		if err != nil {
+			fmt.Printf("Note: Notification sounds not available: %v\n", err)
+		}
 	} else {
 		if err := ambientService.Start(); err != nil {
 			fmt.Printf("Note: Failed to start ambient monitoring: %v\n", err)
 		}
-	}
-
-	// Create standalone audio player for notification sounds (independent of ambient service)
-	var notifyAudioPlayer *audio.Player
-	notifyAudioPlayer, err = audio.NewPlayer(cfg)
-	if err != nil {
-		fmt.Printf("Note: Notification sounds not available: %v\n", err)
+		// Use the ambient service's player for notifications
+		notifyAudioPlayer = ambientService.GetPlayer()
 	}
 
 	// Initialize notification service (config will be reloaded from disk each time)
