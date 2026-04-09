@@ -69,8 +69,12 @@ func (s *AmbientService) Play() error {
 		return err
 	}
 
+	// Mark as NOT auto-played (manual control)
+	s.isAutoPlaying = false
+
 	// Fade in
 	s.player.FadeIn(config.AudioFadeInDuration)
+	fmt.Println("Ambient sound started (manual)")
 	return nil
 }
 
