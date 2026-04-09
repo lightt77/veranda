@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/lightt77/veranda/internal/audio"
 	"github.com/lightt77/veranda/internal/config"
 	"github.com/lightt77/veranda/internal/db"
 	"github.com/lightt77/veranda/internal/repository"
@@ -22,6 +23,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error creating logs directory: %v\n", err)
 		os.Exit(1)
 	}
+	if err := os.MkdirAll(cfg.SoundsDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating sounds directory: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Open database
 	database, err := db.Open(cfg)
@@ -31,14 +36,29 @@ func main() {
 	}
 	defer database.Close()
 
+	// Initialize repositories
+	timerRepo := repository.NewTimerRepository(database)
+	stopwatchRepo := repository.NewStopwatchRepository(database)
+	lapRepo := repository.NewStopwatchLapRepository(database)
+	journalRepo := repository.NewJournalRepository(database)
+	settingsRepo := repository.NewSettingsRepository(database)
+
 	// Initialize services
-	timerService := service.NewTimerService(repository.NewTimerRepository(database))
-	stopwatchService := service.NewStopwatchService(
-		repository.NewStopwatchRepository(database),
-		repository.NewStopwatchLapRepository(database),
-	)
-	journalService := service.NewJournalService(repository.NewJournalRepository(database))
-	settingsService := service.NewSettingsService(repository.NewSettingsRepository(database))
+	timerService := service.NewTimerService(timerRepo)
+	stopwatchService := service.NewStopwatchService(stopwatchRepo, lapRepo)
+	journalService := service.NewJournalService(journalRepo)
+	settingsService := service.NewSettingsService(settingsRepo)
+
+	// Initialize ambient sound service (optional - won't fail if no audio files)
+	var ambientService *audio.AmbientService
+	ambientService, err = audio.NewAmbientService(cfg, timerService, stopwatchService)
+	if err != nil {
+		fmt.Printf("Note: Ambient sound not available: %v\n", err)
+	} else {
+		if err := ambientService.Start(); err != nil {
+			fmt.Printf("Note: Failed to start ambient monitoring: %v\n", err)
+		}
+	}
 
 	fmt.Printf("Veranda %s\n", cfg.AppVersion)
 	fmt.Printf("Database: %s\n", cfg.DatabasePath)
@@ -78,5 +98,13 @@ func main() {
 
 	fmt.Println()
 	fmt.Println("All services working correctly!")
-	fmt.Println("TODO: Implement CLI commands and TUI")
+
+	// Check for ambient sounds
+	if ambientService != nil {
+		fmt.Printf("\nAmbient sound service: initialized\n")
+		fmt.Printf("Sounds directory: %s\n", cfg.SoundsDir)
+		fmt.Println("Tip: Add MP3 files to the sounds directory for ambient playback")
+	}
+
+	fmt.Println("\nTODO: Implement CLI commands and TUI")
 }
