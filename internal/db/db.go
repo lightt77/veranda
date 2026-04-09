@@ -48,12 +48,18 @@ func runMigrations(db *sql.DB) error {
 		journalEntriesTable,
 		scheduledTasksTable,
 		settingsTable,
+		citiesTable,
 	}
 
 	for _, migration := range migrations {
 		if _, err := db.Exec(migration); err != nil {
 			return err
 		}
+	}
+
+	// Seed cities data if table is empty
+	if err := seedCities(db); err != nil {
+		return fmt.Errorf("failed to seed cities: %w", err)
 	}
 
 	return nil
