@@ -488,10 +488,9 @@ func (s *Server) handleAmbientStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"enabled":     true,
-		"playing":     s.ambientService.IsPlaying(),
-		"volume":      s.ambientService.GetVolume(),
-		"currentFile": s.ambientService.GetCurrentFile(),
+		"enabled": true,
+		"playing": s.ambientService.IsPlaying(),
+		"note":    "volume and file list now configured per-sound via TUI",
 	})
 }
 
@@ -529,12 +528,6 @@ func (s *Server) handleAmbientSetVolume(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var req setVolumeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-
-	s.ambientService.SetVolume(req.Volume)
-	respondJSON(w, http.StatusOK, map[string]float64{"volume": req.Volume})
+	// Volume is now controlled per-sound via TUI/config, not via API
+	respondError(w, http.StatusNotImplemented, "volume is now controlled per-sound via TUI. Use the Ambient Sounds tab.")
 }
