@@ -29,6 +29,32 @@ var daemonCmd = &cobra.Command{
 
 func init() {
 	RootCmd.AddCommand(daemonCmd)
+	daemonCmd.AddCommand(daemonStopCmd)
+}
+
+// daemonStopCmd represents the daemon stop command
+var daemonStopCmd = &cobra.Command{
+	Use:   "stop",
+	Short: "Stop the Veranda daemon",
+	Long:  `Send a shutdown signal to the running Veranda daemon.`,
+	Run:   runDaemonStop,
+}
+
+func runDaemonStop(cmd *cobra.Command, args []string) {
+	cfg := getConfig()
+	client := daemon.NewClient(cfg.DaemonPort)
+
+	if !client.IsRunning() {
+		fmt.Println("Daemon is not running")
+		return
+	}
+
+	fmt.Println("Stopping daemon...")
+	if err := client.StopDaemon(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error stopping daemon: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("Daemon stopped")
 }
 
 func runDaemon(cmd *cobra.Command, args []string) {

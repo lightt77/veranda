@@ -257,3 +257,30 @@ func (c *Client) SetAmbientVolume(volume float64) error {
 	}
 	return decodeJSON(resp, &struct{}{})
 }
+
+// StopDaemon sends a shutdown request to the daemon
+func (c *Client) StopDaemon() error {
+	resp, err := c.doRequest("POST", "/daemon/shutdown", nil)
+	if err != nil {
+		return err
+	}
+	return decodeJSON(resp, &struct{}{})
+}
+
+// DeleteTimer deletes a timer
+func (c *Client) DeleteTimer(id int64) error {
+	resp, err := c.doRequest("DELETE", fmt.Sprintf("/timers/%d", id), nil)
+	if err != nil {
+		return err
+	}
+	return decodeJSON(resp, &struct{}{})
+}
+
+// DeleteStopwatch deletes a stopwatch
+func (c *Client) DeleteStopwatch(id int64) error {
+	resp, err := c.doRequest("DELETE", fmt.Sprintf("/stopwatches/%d", id), nil)
+	if err != nil {
+		return err
+	}
+	return decodeJSON(resp, &struct{}{})
+}
