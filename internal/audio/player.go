@@ -222,28 +222,14 @@ func (p *Player) playFile(filename string) error {
 	// Resample to speaker's sample rate if needed
 	resampled := beep.Resample(4, format.SampleRate, p.sampleRate, streamer)
 
-	// Create volume control
+	// Update current file
 	p.mutex.Lock()
-	p.volumeCtrl = &effects.Volume{
-		Streamer: resampled,
-		Base:     2,
-		Volume:   0,
-		Silent:   false,
-	}
 	p.currentFile = filename
-	p.volume = 0.5 // Ensure volume is set
 	p.mutex.Unlock()
 
-	// Set volume immediately
-	db := 20 * math.Log10(0.5)
-	p.volumeCtrl.Volume = db
-
-	// Create controller for pause/stop
-	p.ctrl = &beep.Ctrl{Streamer: p.volumeCtrl}
-
-	// Play with callback when done
+	// Play with callback when done - NO Volume wrapper for now
 	done := make(chan struct{})
-	speaker.Play(beep.Seq(p.ctrl, beep.Callback(func() {
+	speaker.Play(beep.Seq(resampled, beep.Callback(func() {
 		streamer.Close()
 		f.Close()
 		close(done)
