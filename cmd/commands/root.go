@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/lightt77/veranda/internal/config"
+	"github.com/lightt77/veranda/internal/daemon"
 	"github.com/spf13/cobra"
 )
 
@@ -44,4 +45,16 @@ func init() {
 // getConfig returns the application configuration
 func getConfig() *config.AppConfig {
 	return config.Config()
+}
+
+// ensureDaemon ensures the daemon is running, starts it if not
+func ensureDaemon() (*daemon.Client, error) {
+	cfg := getConfig()
+	manager := daemon.NewManager(cfg.DaemonPort)
+
+	if err := manager.EnsureRunning(); err != nil {
+		return nil, fmt.Errorf("failed to start daemon: %w", err)
+	}
+
+	return daemon.NewClient(cfg.DaemonPort), nil
 }

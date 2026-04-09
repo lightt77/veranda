@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/lightt77/veranda/internal/daemon"
 	"github.com/spf13/cobra"
 )
 
@@ -37,9 +36,9 @@ var ambientPlayCmd = &cobra.Command{
 	Use:   "play",
 	Short: "Start ambient sound playback",
 	Run: func(cmd *cobra.Command, args []string) {
-		client := daemon.NewClient(getConfig().DaemonPort)
-		if !client.IsRunning() {
-			fmt.Println("Error: Daemon is not running")
+		client, err := ensureDaemon()
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
 			return
 		}
 
@@ -57,9 +56,9 @@ var ambientStopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Stop ambient sound playback",
 	Run: func(cmd *cobra.Command, args []string) {
-		client := daemon.NewClient(getConfig().DaemonPort)
-		if !client.IsRunning() {
-			fmt.Println("Error: Daemon is not running")
+		client, err := ensureDaemon()
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
 			return
 		}
 
@@ -77,13 +76,14 @@ var ambientStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show ambient sound status",
 	Run: func(cmd *cobra.Command, args []string) {
-		client := daemon.NewClient(getConfig().DaemonPort)
-		if !client.IsRunning() {
-			fmt.Println("Error: Daemon is not running")
+		client, err := ensureDaemon()
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
 			return
 		}
 
 		// Note: Would need a client method to get status
+		_ = client
 		fmt.Println("Ambient sound service is running")
 		fmt.Printf("Check API at: http://localhost:%d/ambient/status\n", getConfig().DaemonPort)
 	},
@@ -95,9 +95,9 @@ var ambientVolumeCmd = &cobra.Command{
 	Short: "Set ambient sound volume",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		client := daemon.NewClient(getConfig().DaemonPort)
-		if !client.IsRunning() {
-			fmt.Println("Error: Daemon is not running")
+		client, err := ensureDaemon()
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
 			return
 		}
 

@@ -3,9 +3,7 @@ package cmd
 import (
 	"fmt"
 	"strconv"
-	"time"
 
-	"github.com/lightt77/veranda/internal/daemon"
 	"github.com/lightt77/veranda/internal/service"
 	"github.com/spf13/cobra"
 )
@@ -38,9 +36,9 @@ var timerListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all timers",
 	Run: func(cmd *cobra.Command, args []string) {
-		client := daemon.NewClient(getConfig().DaemonPort)
-		if !client.IsRunning() {
-			fmt.Println("Error: Daemon is not running")
+		client, err := ensureDaemon()
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
 			return
 		}
 
@@ -77,9 +75,9 @@ var timerStartCmd = &cobra.Command{
 	Short: "Start a timer",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		client := daemon.NewClient(getConfig().DaemonPort)
-		if !client.IsRunning() {
-			fmt.Println("Error: Daemon is not running")
+		client, err := ensureDaemon()
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
 			return
 		}
 
@@ -105,9 +103,9 @@ var timerPauseCmd = &cobra.Command{
 	Short: "Pause a timer",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		client := daemon.NewClient(getConfig().DaemonPort)
-		if !client.IsRunning() {
-			fmt.Println("Error: Daemon is not running")
+		client, err := ensureDaemon()
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
 			return
 		}
 
@@ -141,9 +139,9 @@ var timerDeleteCmd = &cobra.Command{
 	Short: "Delete a timer",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		client := daemon.NewClient(getConfig().DaemonPort)
-		if !client.IsRunning() {
-			fmt.Println("Error: Daemon is not running")
+		client, err := ensureDaemon()
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
 			return
 		}
 
@@ -154,20 +152,21 @@ var timerDeleteCmd = &cobra.Command{
 		}
 
 		// TODO: Implement delete in client
+		_ = client
 		fmt.Printf("Timer %d deleted\n", id)
 	},
 }
 
 // runTimer creates a new timer with optional duration and label
 func runTimer(cmd *cobra.Command, args []string) {
-	client := daemon.NewClient(getConfig().DaemonPort)
-	if !client.IsRunning() {
-		fmt.Println("Error: Daemon is not running. Start it with 'veranda daemon'")
+	if len(args) == 0 {
+		cmd.Help()
 		return
 	}
 
-	if len(args) == 0 {
-		cmd.Help()
+	client, err := ensureDaemon()
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
 		return
 	}
 
@@ -202,6 +201,3 @@ func min(a, b int) int {
 	}
 	return b
 }
-
-// Add this import to avoid "time" unused error if needed
-var _ = time.Now

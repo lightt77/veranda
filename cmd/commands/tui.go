@@ -13,6 +13,12 @@ var tuiCmd = &cobra.Command{
 	Short: "Launch the Terminal User Interface",
 	Long:  `Launch an interactive TUI for managing timers, stopwatches, and viewing activity.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		// Ensure daemon is running before starting TUI
+		if _, err := ensureDaemon(); err != nil {
+			fmt.Printf("Error starting daemon: %v\n", err)
+			return
+		}
+
 		if err := tui.Run(getConfig().DaemonPort); err != nil {
 			fmt.Printf("Error running TUI: %v\n", err)
 		}

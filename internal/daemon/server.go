@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -25,6 +27,13 @@ type Server struct {
 	journalService   *service.JournalService
 	settingsService  *service.SettingsService
 	ambientService   *audio.AmbientService
+
+	// Activity tracking for auto-shutdown
+	lastActivity  time.Time
+	activityMutex sync.RWMutex
+	idleTimeout   time.Duration
+	stopChan      chan struct{}
+	wg            sync.WaitGroup
 }
 
 // NewServer creates a new daemon server
@@ -46,16 +55,65 @@ func NewServer(
 		journalService:   journalService,
 		settingsService:  settingsService,
 		ambientService:   ambientService,
+		lastActivity:     time.Now(),
+		idleTimeout:      30 * time.Second, // Shutdown after 30s of inactivity
+		stopChan:         make(chan struct{}),
 	}
 
 	s.setupRoutes()
 	return s
 }
 
+// RecordActivity marks that there was recent activity
+func (s *Server) RecordActivity() {
+	s.activityMutex.Lock()
+	s.lastActivity = time.Now()
+	s.activityMutex.Unlock()
+}
+
+// GetLastActivity returns the time of last activity
+func (s *Server) GetLastActivity() time.Time {
+	s.activityMutex.RLock()
+	defer s.activityMutex.RUnlock()
+	return s.lastActivity
+}
+
+// HasWork returns true if there's active work to do
+func (s *Server) HasWork() bool {
+	// Check for running timers
+	timersRunning, _ := s.timerService.AnyRunning()
+	if timersRunning {
+		return true
+	}
+
+	// Check for running stopwatches
+	stopwatchesRunning, _ := s.stopwatchService.AnyRunning()
+	if stopwatchesRunning {
+		return true
+	}
+
+	// Check if ambient sound is playing
+	if s.ambientService != nil && s.ambientService.IsPlaying() {
+		return true
+	}
+
+	return false
+}
+
+// IsIdle returns true if daemon has been idle for longer than timeout
+func (s *Server) IsIdle() bool {
+	s.activityMutex.RLock()
+	idleTime := time.Since(s.lastActivity)
+	s.activityMutex.RUnlock()
+
+	return idleTime > s.idleTimeout && !s.HasWork()
+}
+
 // setupRoutes configures all API routes
 func (s *Server) setupRoutes() {
 	// Middleware
 	s.router.Use(jsonContentType)
+	s.router.Use(s.activityMiddleware)
 
 	// Health check
 	s.router.Get("/health", s.handleHealth)
@@ -114,7 +172,15 @@ func (s *Server) setupRoutes() {
 	})
 }
 
-// Start starts the HTTP server
+// activityMiddleware records API activity
+func (s *Server) activityMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.RecordActivity()
+		next.ServeHTTP(w, r)
+	})
+}
+
+// Start starts the HTTP server and idle monitoring
 func (s *Server) Start() error {
 	addr := fmt.Sprintf("localhost:%d", s.config.DaemonPort)
 	s.httpServer = &http.Server{
@@ -123,6 +189,8 @@ func (s *Server) Start() error {
 	}
 
 	fmt.Printf("Daemon server starting on %s\n", addr)
+
+	// Start HTTP server
 	go func() {
 		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			fmt.Printf("Daemon server error: %v\n", err)
@@ -131,19 +199,55 @@ func (s *Server) Start() error {
 
 	// Give the server a moment to start
 	time.Sleep(100 * time.Millisecond)
+
+	// Start idle monitoring
+	s.wg.Add(1)
+	go s.monitorIdle()
+
 	return nil
+}
+
+// monitorIdle checks for idle state and shuts down when appropriate
+func (s *Server) monitorIdle() {
+	defer s.wg.Done()
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.stopChan:
+			return
+		case <-ticker.C:
+			if s.IsIdle() {
+				fmt.Println("Daemon idle - no active timers or ambient sound. Shutting down...")
+				// Graceful shutdown
+				go s.Stop()
+				return
+			}
+		}
+	}
 }
 
 // Stop gracefully shuts down the server
 func (s *Server) Stop() error {
+	close(s.stopChan)
+
 	if s.httpServer == nil {
+		s.wg.Wait()
 		return nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	return s.httpServer.Shutdown(ctx)
+	err := s.httpServer.Shutdown(ctx)
+	s.wg.Wait()
+
+	// Exit the process
+	os.Exit(0)
+
+	return err
 }
 
 // Middleware
