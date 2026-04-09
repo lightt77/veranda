@@ -212,13 +212,16 @@ func (p *Player) playFile(filename string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	// Note: We don't defer f.Close() here because the file needs to stay open
+	// until playback completes. The streamer will close it when done.
 
 	streamer, format, err := mp3.Decode(f)
 	if err != nil {
+		f.Close()
 		return fmt.Errorf("failed to decode MP3: %w", err)
 	}
-	defer streamer.Close()
+	// Note: We don't defer streamer.Close() here because the streamer needs
+	// to stay open until playback completes. The callback will close it.
 
 	// Resample to speaker's sample rate if needed
 	resampled := beep.Resample(4, format.SampleRate, p.sampleRate, streamer)
@@ -246,6 +249,8 @@ func (p *Player) playFile(filename string) error {
 	// Play with callback when done
 	done := make(chan struct{})
 	speaker.Play(beep.Seq(p.ctrl, beep.Callback(func() {
+		streamer.Close()
+		f.Close()
 		close(done)
 	})))
 
@@ -255,6 +260,8 @@ func (p *Player) playFile(filename string) error {
 		return nil
 	case <-p.stopChan:
 		speaker.Clear()
+		streamer.Close()
+		f.Close()
 		return nil
 	}
 }
