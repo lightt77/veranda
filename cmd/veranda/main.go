@@ -3,9 +3,11 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/lightt77/veranda/internal/audio"
 	"github.com/lightt77/veranda/internal/config"
+	"github.com/lightt77/veranda/internal/daemon"
 	"github.com/lightt77/veranda/internal/db"
 	"github.com/lightt77/veranda/internal/repository"
 	"github.com/lightt77/veranda/internal/service"
@@ -60,9 +62,24 @@ func main() {
 		}
 	}
 
+	// Initialize and start daemon server
+	daemonServer := daemon.NewServer(
+		cfg,
+		timerService,
+		stopwatchService,
+		journalService,
+		settingsService,
+		ambientService,
+	)
+
+	if err := daemonServer.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error starting daemon: %v\n", err)
+		os.Exit(1)
+	}
+
 	fmt.Printf("Veranda %s\n", cfg.AppVersion)
 	fmt.Printf("Database: %s\n", cfg.DatabasePath)
-	fmt.Printf("Daemon port: %d\n", cfg.DaemonPort)
+	fmt.Printf("Daemon: http://localhost:%d\n", cfg.DaemonPort)
 	fmt.Println()
 
 	// Demo: Create a test timer
@@ -106,5 +123,10 @@ func main() {
 		fmt.Println("Tip: Add MP3 files to the sounds directory for ambient playback")
 	}
 
-	fmt.Println("\nTODO: Implement CLI commands and TUI")
+	fmt.Println("\nDaemon is running. Press Ctrl+C to stop.")
+
+	// Keep running
+	for {
+		time.Sleep(1 * time.Second)
+	}
 }
