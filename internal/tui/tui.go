@@ -3,48 +3,35 @@ package tui
 
 import (
 	"fmt"
-	"math/rand"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lightt77/veranda/internal/daemon"
+	"github.com/lightt77/veranda/internal/repository"
+	"github.com/lightt77/veranda/internal/tui/starfield"
 )
 
-// Star represents a twinkling star in the background
-type Star struct {
-	x          int
-	y          int
-	char       string
-	color      lipgloss.Color
-	brightness int // 0=dark, 1=medium, 2=bright
-}
+// StarfieldMode represents the starfield display mode
+type StarfieldMode int
 
-// Star characters by brightness level (single-width for proper alignment)
-var starChars = [][]string{
-	{"·", "."}, // Dim
-	{"*", "+"}, // Medium
-	{"★", "✦"}, // Bright
-}
-
-// Star colors (Catppuccin Mocha tints)
-var starColors = []lipgloss.Color{
-	lipgloss.Color("#cba6f7"), // Mauve
-	lipgloss.Color("#b4befe"), // Lavender
-	lipgloss.Color("#f5c2e7"), // Pink
-	lipgloss.Color("#cdd6f4"), // Text (white-blue)
-}
+const (
+	ModeRandom StarfieldMode = iota
+	ModeRealistic
+)
 
 // twinkleMsg is sent to update star twinkling
 type twinkleMsg time.Time
+
+// starfieldUpdateMsg is sent to update realistic starfield positions
+type starfieldUpdateMsg time.Time
 
 // Model represents the TUI state
 type Model struct {
 	client        *daemon.Client
 	timers        []map[string]interface{}
 	stopwatches   []map[string]interface{}
-	stars         []Star
 	activeTab     int  // 0 = timers, 1 = stopwatches
 	showCompleted bool // toggle to show/hide completed timers
 	selectedIdx   int  // currently selected item index
@@ -52,6 +39,21 @@ type Model struct {
 	height        int
 	err           error
 	lastUpdate    time.Time
+
+	// Starfield mode
+	starfieldMode      StarfieldMode
+	randomStarfield    *starfield.RandomStarfield
+	realisticStarfield *starfield.RealisticStarfield
+
+	// Location
+	citiesRepo  *repository.CitiesRepository
+	currentCity *repository.City
+
+	// City picker
+	showCityPicker   bool
+	cityPickerSearch string
+	cityPickerCities []repository.City
+	cityPickerIndex  int
 }
 
 // Catppuccin Mocha Color Palette
@@ -143,126 +145,35 @@ type dataMsg struct {
 }
 
 // New creates a new TUI model
-func New(port int) Model {
+func New(port int, citiesRepo *repository.CitiesRepository) Model {
+	// Get default city (Mumbai)
+	var defaultCity *repository.City
+	if citiesRepo != nil {
+		defaultCity, _ = citiesRepo.DefaultCity()
+	}
+
+	// Create observer from city or use Mumbai defaults
+	var observer starfield.Observer
+	if defaultCity != nil {
+		observer = starfield.Observer{
+			Latitude:  defaultCity.Latitude,
+			Longitude: defaultCity.Longitude,
+			Timezone:  defaultCity.Timezone,
+		}
+	} else {
+		observer = starfield.MumbaiObserver()
+	}
+
 	return Model{
-		client:     daemon.NewClient(port),
-		activeTab:  0,
-		lastUpdate: time.Now(),
-		stars:      []Star{},
+		client:             daemon.NewClient(port),
+		activeTab:          0,
+		lastUpdate:         time.Now(),
+		starfieldMode:      ModeRandom, // Default to random mode
+		randomStarfield:    starfield.NewRandomStarfield(),
+		realisticStarfield: starfield.NewRealisticStarfield(observer),
+		citiesRepo:         citiesRepo,
+		currentCity:        defaultCity,
 	}
-}
-
-// updateChar sets the star's character based on brightness
-func (s *Star) updateChar() {
-	chars := starChars[s.brightness]
-	s.char = chars[rand.Intn(len(chars))]
-}
-
-// generateStars creates random stars in the upper area with random count (5-15)
-func (m *Model) generateStars() {
-	if m.width == 0 || m.height == 0 {
-		return
-	}
-
-	// Content area dimensions
-	contentHeight := 14
-	paddingBottom := 2
-
-	// Star area is the upper portion
-	starAreaHeight := m.height - contentHeight - paddingBottom
-	if starAreaHeight < 8 {
-		starAreaHeight = 8
-	}
-
-	// Random star count between 5 and 15
-	starCount := 5 + rand.Intn(11)
-	m.stars = make([]Star, 0, starCount)
-
-	for len(m.stars) < starCount {
-		// Place stars only in the star area (upper portion)
-		x := rand.Intn(m.width)
-		y := rand.Intn(starAreaHeight)
-
-		color := starColors[rand.Intn(len(starColors))]
-		brightness := rand.Intn(3)
-
-		star := Star{
-			x:          x,
-			y:          y,
-			color:      color,
-			brightness: brightness,
-		}
-		star.updateChar()
-		m.stars = append(m.stars, star)
-	}
-}
-
-// twinkle randomly changes star brightness and handles star lifecycle
-func (m *Model) twinkle() {
-	if len(m.stars) == 0 {
-		return
-	}
-
-	// Twinkle existing stars (change brightness)
-	twinkleCount := 1 + rand.Intn(2)
-	for i := 0; i < twinkleCount; i++ {
-		idx := rand.Intn(len(m.stars))
-		change := rand.Intn(3) - 1
-		m.stars[idx].brightness += change
-		if m.stars[idx].brightness < 0 {
-			m.stars[idx].brightness = 0
-		}
-		if m.stars[idx].brightness > 2 {
-			m.stars[idx].brightness = 2
-		}
-		m.stars[idx].updateChar()
-	}
-
-	// 1% chance: a star disappears and a new one appears elsewhere (swap)
-	if rand.Float32() < 0.01 {
-		// Remove a random star
-		removeIdx := rand.Intn(len(m.stars))
-		m.stars = append(m.stars[:removeIdx], m.stars[removeIdx+1:]...)
-
-		// Add a new star at a random position
-		m.spawnStar()
-	}
-
-	// 1% chance: spawn an extra star (up to 20 max)
-	if rand.Float32() < 0.01 && len(m.stars) < 20 {
-		m.spawnStar()
-	}
-
-	// 1% chance: remove a star without replacement (down to 3 min)
-	if rand.Float32() < 0.01 && len(m.stars) > 3 {
-		removeIdx := rand.Intn(len(m.stars))
-		m.stars = append(m.stars[:removeIdx], m.stars[removeIdx+1:]...)
-	}
-}
-
-// spawnStar adds a new star at a random position
-func (m *Model) spawnStar() {
-	contentHeight := 14
-	paddingBottom := 2
-	starAreaHeight := m.height - contentHeight - paddingBottom
-	if starAreaHeight < 8 {
-		starAreaHeight = 8
-	}
-
-	x := rand.Intn(m.width)
-	y := rand.Intn(starAreaHeight)
-	color := starColors[rand.Intn(len(starColors))]
-	// New stars start dim and brighten over time
-	brightness := rand.Intn(2)
-
-	newStar := Star{
-		x:          x,
-		y:          y,
-		color:      color,
-		brightness: brightness,
-	}
-	newStar.updateChar()
-	m.stars = append(m.stars, newStar)
 }
 
 // Init initializes the TUI
@@ -271,6 +182,7 @@ func (m Model) Init() tea.Cmd {
 		tickCmd(),
 		refreshCmd(m.client),
 		twinkleCmd(),
+		starfieldUpdateCmd(),
 	)
 }
 
@@ -281,19 +193,97 @@ func twinkleCmd() tea.Cmd {
 	})
 }
 
+// starfieldUpdateCmd creates a command for realistic starfield updates (120s)
+func starfieldUpdateCmd() tea.Cmd {
+	return tea.Tick(120*time.Second, func(t time.Time) tea.Msg {
+		return starfieldUpdateMsg(t)
+	})
+}
+
 // Update handles messages
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.generateStars()
+
+		// Calculate star area height
+		contentHeight := 14
+		paddingBottom := 2
+		starAreaHeight := m.height - contentHeight - paddingBottom
+		if starAreaHeight < 8 {
+			starAreaHeight = 8
+		}
+
+		// Resize both starfields
+		m.randomStarfield.Resize(m.width, m.height, starAreaHeight)
+		m.realisticStarfield.Resize(m.width, m.height, starAreaHeight)
+
+		// Trigger initial realistic starfield update
+		m.realisticStarfield.Update(time.Now())
 
 	case twinkleMsg:
-		m.twinkle()
+		// Only twinkle in random mode
+		if m.starfieldMode == ModeRandom {
+			m.randomStarfield.Twinkle()
+		}
 		return m, twinkleCmd()
 
+	case starfieldUpdateMsg:
+		// Update realistic starfield positions
+		if m.starfieldMode == ModeRealistic {
+			m.realisticStarfield.Update(time.Now())
+		}
+		return m, starfieldUpdateCmd()
+
 	case tea.KeyMsg:
+		// Handle city picker mode first
+		if m.showCityPicker {
+			switch msg.String() {
+			case "esc", "q":
+				m.showCityPicker = false
+				m.cityPickerSearch = ""
+				m.cityPickerCities = nil
+			case "up", "k":
+				if m.cityPickerIndex > 0 {
+					m.cityPickerIndex--
+				}
+			case "down", "j":
+				if m.cityPickerIndex < len(m.cityPickerCities)-1 {
+					m.cityPickerIndex++
+				}
+			case "enter":
+				if m.cityPickerIndex < len(m.cityPickerCities) {
+					selected := m.cityPickerCities[m.cityPickerIndex]
+					m.currentCity = &selected
+
+					// Update observer
+					observer := starfield.Observer{
+						Latitude:  selected.Latitude,
+						Longitude: selected.Longitude,
+						Timezone:  selected.Timezone,
+					}
+					m.realisticStarfield.SetObserver(observer)
+					m.realisticStarfield.Update(time.Now())
+
+					// Close picker
+					m.showCityPicker = false
+					m.cityPickerSearch = ""
+					m.cityPickerCities = nil
+				}
+			default:
+				// Handle search input
+				if len(msg.String()) == 1 {
+					m.cityPickerSearch += msg.String()
+					m.searchCities()
+				} else if msg.String() == "backspace" && len(m.cityPickerSearch) > 0 {
+					m.cityPickerSearch = m.cityPickerSearch[:len(m.cityPickerSearch)-1]
+					m.searchCities()
+				}
+			}
+			return m, nil
+		}
+
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
@@ -343,6 +333,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.activeTab == 1 {
 				return m, createStopwatchCmd(m.client)
 			}
+		case "m":
+			// Toggle starfield mode
+			if m.starfieldMode == ModeRandom {
+				m.starfieldMode = ModeRealistic
+				m.realisticStarfield.Update(time.Now())
+			} else {
+				m.starfieldMode = ModeRandom
+			}
+		case "l":
+			// Open city picker
+			if m.citiesRepo != nil {
+				m.showCityPicker = true
+				m.cityPickerIndex = 0
+				m.cityPickerSearch = ""
+				m.loadAllCities()
+			}
 		}
 
 	case tickMsg:
@@ -369,6 +375,43 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// searchCities searches for cities based on current search string
+func (m *Model) searchCities() {
+	if m.citiesRepo == nil {
+		return
+	}
+
+	if m.cityPickerSearch == "" {
+		m.loadAllCities()
+		return
+	}
+
+	cities, err := m.citiesRepo.Search(m.cityPickerSearch)
+	if err != nil {
+		m.cityPickerCities = []repository.City{}
+		return
+	}
+
+	m.cityPickerCities = cities
+	m.cityPickerIndex = 0
+}
+
+// loadAllCities loads all cities for the picker
+func (m *Model) loadAllCities() {
+	if m.citiesRepo == nil {
+		return
+	}
+
+	cities, err := m.citiesRepo.GetAll()
+	if err != nil {
+		m.cityPickerCities = []repository.City{}
+		return
+	}
+
+	m.cityPickerCities = cities
+	m.cityPickerIndex = 0
+}
+
 // View renders the UI
 func (m Model) View() string {
 	if !m.client.IsRunning() {
@@ -381,29 +424,57 @@ func (m Model) View() string {
 	}
 
 	// Generate stars if we don't have any
-	if len(m.stars) == 0 {
-		m.generateStars()
+	if m.starfieldMode == ModeRandom && len(m.randomStarfield.GetStars()) == 0 {
+		contentHeight := 14
+		paddingBottom := 2
+		starAreaHeight := m.height - contentHeight - paddingBottom
+		if starAreaHeight < 8 {
+			starAreaHeight = 8
+		}
+		m.randomStarfield.Resize(m.width, m.height, starAreaHeight)
 	}
 
-	// Content area dimensions
-	contentHeight := 14 // Approximate height of content area
+	// Calculate star area dimensions
+	contentHeight := 14
 	paddingBottom := 2
-
-	// Calculate star area (upper portion, avoiding content)
 	starAreaHeight := m.height - contentHeight - paddingBottom
 	if starAreaHeight < 8 {
-		starAreaHeight = 8 // Minimum star area
+		starAreaHeight = 8
 	}
 
-	// Build starfield (only in upper area)
-	// Use a slice to hold row content, then join at end
+	// Build starfield
+	var starfieldStr string
+	if m.showCityPicker {
+		starfieldStr = m.renderCityPicker(starAreaHeight)
+	} else if m.starfieldMode == ModeRealistic {
+		starfieldStr = m.renderRealisticStarfield(starAreaHeight)
+	} else {
+		starfieldStr = m.renderRandomStarfield(starAreaHeight)
+	}
+
+	// Get content
+	content := m.renderContent()
+
+	// Use lipgloss to place content at bottom
+	contentArea := lipgloss.NewStyle().
+		Height(contentHeight).
+		Width(m.width).
+		Align(lipgloss.Left, lipgloss.Bottom).
+		Render(content)
+
+	// Join starfield and content
+	return starfieldStr + "\n" + contentArea
+}
+
+// renderRandomStarfield renders the random starfield
+func (m Model) renderRandomStarfield(starAreaHeight int) string {
 	rows := make([]string, starAreaHeight)
 
 	// Map to track star positions
-	starMap := make(map[[2]int]Star)
-	for _, star := range m.stars {
-		if star.y < starAreaHeight && star.x < m.width {
-			starMap[[2]int{star.x, star.y}] = star
+	starMap := make(map[[2]int]starfield.Star)
+	for _, star := range m.randomStarfield.GetStars() {
+		if star.Y < starAreaHeight && star.X < m.width {
+			starMap[[2]int{star.X, star.Y}] = star
 		}
 	}
 
@@ -412,7 +483,7 @@ func (m Model) View() string {
 		var row strings.Builder
 		for x := 0; x < m.width; x++ {
 			if star, ok := starMap[[2]int{x, y}]; ok {
-				row.WriteString(lipgloss.NewStyle().Foreground(star.color).Render(star.char))
+				row.WriteString(lipgloss.NewStyle().Foreground(star.Color).Render(star.Char))
 			} else {
 				row.WriteString(" ")
 			}
@@ -420,21 +491,104 @@ func (m Model) View() string {
 		rows[y] = row.String()
 	}
 
-	starfield := strings.Join(rows, "\n")
+	return strings.Join(rows, "\n")
+}
 
-	// Get content
-	content := m.renderContent()
+// renderRealisticStarfield renders the realistic starfield
+func (m Model) renderRealisticStarfield(starAreaHeight int) string {
+	rows := make([]string, starAreaHeight)
 
-	// Use lipgloss to place content at bottom
-	// First, create the content area with proper height
-	contentArea := lipgloss.NewStyle().
-		Height(contentHeight).
-		Width(m.width).
-		Align(lipgloss.Left, lipgloss.Bottom).
-		Render(content)
+	// Initialize empty rows
+	for y := 0; y < starAreaHeight; y++ {
+		rows[y] = strings.Repeat(" ", m.width)
+	}
 
-	// Join starfield and content
-	return starfield + "\n" + contentArea
+	// Get visible objects
+	objects := m.realisticStarfield.GetVisibleObjects()
+
+	// Render each object
+	for _, obj := range objects {
+		if obj.ScreenY >= 0 && obj.ScreenY < starAreaHeight &&
+			obj.ScreenX >= 0 && obj.ScreenX < m.width {
+
+			// Get symbol based on brightness
+			symbol := starfield.GetObjectSymbol(obj.Object, obj.Brightness)
+
+			// Get color
+			color := starfield.GetObjectColor(obj.Object, obj.Brightness)
+
+			// Render the symbol with color
+			styled := lipgloss.NewStyle().Foreground(color).Render(symbol)
+
+			// Place in row (this is simplified - for multi-char symbols, would need more care)
+			row := rows[obj.ScreenY]
+			if obj.ScreenX < len(row) {
+				// Replace character at position
+				before := row[:obj.ScreenX]
+				after := ""
+				if obj.ScreenX+len(symbol) < len(row) {
+					after = row[obj.ScreenX+len(symbol):]
+				}
+				rows[obj.ScreenY] = before + styled + after
+			}
+		}
+	}
+
+	return strings.Join(rows, "\n")
+}
+
+// renderCityPicker renders the city selection interface
+func (m Model) renderCityPicker(starAreaHeight int) string {
+	var s strings.Builder
+
+	// Title
+	s.WriteString(lipgloss.NewStyle().Bold(true).Foreground(mauve).Render("📍 Select Location\n\n"))
+
+	// Search box
+	searchStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)
+	searchText := m.cityPickerSearch
+	if searchText == "" {
+		searchText = "Type to search cities..."
+	}
+	s.WriteString(searchStyle.Render(searchText) + "\n\n")
+
+	// City list
+	maxDisplay := starAreaHeight - 5
+	if maxDisplay < 5 {
+		maxDisplay = 5
+	}
+
+	startIdx := 0
+	if m.cityPickerIndex >= maxDisplay {
+		startIdx = m.cityPickerIndex - maxDisplay + 1
+	}
+
+	endIdx := startIdx + maxDisplay
+	if endIdx > len(m.cityPickerCities) {
+		endIdx = len(m.cityPickerCities)
+	}
+
+	for i := startIdx; i < endIdx && i < len(m.cityPickerCities); i++ {
+		city := m.cityPickerCities[i]
+		prefix := "  "
+		if i == m.cityPickerIndex {
+			prefix = selectedStyle.Render("> ")
+		}
+
+		line := fmt.Sprintf("%s%s, %s\n", prefix, city.City, city.Country)
+		s.WriteString(line)
+	}
+
+	// Instructions
+	s.WriteString("\n" + lipgloss.NewStyle().Foreground(overlay0).Render("↑↓:select  enter:confirm  esc:cancel"))
+
+	// Pad to fill the star area
+	lines := strings.Split(s.String(), "\n")
+	for len(lines) < starAreaHeight {
+		lines = append(lines, "")
+	}
+
+	return strings.Join(lines[:starAreaHeight], "\n")
 }
 
 // renderContent renders the content at bottom-left
@@ -475,6 +629,21 @@ func (m Model) renderContent() string {
 		s += leftPad + strings.ReplaceAll(m.renderStopwatches(), "\n", "\n"+leftPad)
 	}
 
+	// Status line with mode and location
+	modeText := "random"
+	if m.starfieldMode == ModeRealistic {
+		modeText = "realistic"
+	}
+
+	locationText := "Mumbai"
+	if m.currentCity != nil {
+		locationText = m.currentCity.City
+	}
+
+	statusLine := lipgloss.NewStyle().Foreground(overlay0).Render(
+		fmt.Sprintf("Mode: %s [%s] | Location: %s [%s] | ", modeText, lipgloss.NewStyle().Foreground(mauve).Render("m"), locationText, lipgloss.NewStyle().Foreground(mauve).Render("l")),
+	)
+
 	// Help
 	helpText := lipgloss.NewStyle().Foreground(mauve).Render("↑↓") +
 		lipgloss.NewStyle().Foreground(overlay0).Render("/jk:select ") +
@@ -490,7 +659,8 @@ func (m Model) renderContent() string {
 		lipgloss.NewStyle().Foreground(overlay0).Render(":refresh ") +
 		lipgloss.NewStyle().Foreground(mauve).Render("q") +
 		lipgloss.NewStyle().Foreground(overlay0).Render(":quit")
-	s += leftPad + helpText + "\n"
+
+	s += leftPad + statusLine + helpText + "\n"
 
 	return s
 }
@@ -752,8 +922,8 @@ func formatStopwatch(ms int64) string {
 }
 
 // Run starts the TUI
-func Run(port int) error {
-	p := tea.NewProgram(New(port), tea.WithAltScreen())
+func Run(port int, citiesRepo *repository.CitiesRepository) error {
+	p := tea.NewProgram(New(port, citiesRepo), tea.WithAltScreen())
 	_, err := p.Run()
 	return err
 }
