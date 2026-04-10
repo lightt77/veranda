@@ -337,6 +337,7 @@ func (p *Player) fadeInStream(stream *AmbientStream, durationMs int64) {
 }
 
 // fadeOutStream gradually decreases volume to 0 for a single stream
+// This runs asynchronously in a goroutine to avoid blocking the caller
 func (p *Player) fadeOutStream(stream *AmbientStream, durationMs int64) {
 	if stream.volumeCtrl == nil || durationMs <= 0 {
 		return
@@ -349,23 +350,31 @@ func (p *Player) fadeOutStream(stream *AmbientStream, durationMs int64) {
 		steps = 1
 	}
 
-	for i := steps; i >= 0; i-- {
-		progress := float64(i) / float64(steps)
-		currentVol := startVolume * progress
-		db := volumeToDB(currentVol)
+	go func() {
+		for i := steps; i >= 0; i-- {
+			select {
+			case <-stream.stopChan:
+				return
+			default:
+				progress := float64(i) / float64(steps)
+				currentVol := startVolume * progress
+				db := volumeToDB(currentVol)
 
-		p.mutex.Lock()
-		if stream.volumeCtrl != nil {
-			stream.volumeCtrl.Volume = db
-			stream.volumeCtrl.Silent = currentVol == 0
+				p.mutex.Lock()
+				if stream.volumeCtrl != nil {
+					stream.volumeCtrl.Volume = db
+					stream.volumeCtrl.Silent = currentVol == 0
+				}
+				p.mutex.Unlock()
+
+				time.Sleep(50 * time.Millisecond)
+			}
 		}
-		p.mutex.Unlock()
-
-		time.Sleep(50 * time.Millisecond)
-	}
+	}()
 }
 
-// playbackLoop continuously plays a sound file (or once if isTest)
+// playbackLoop continuously plays a sound file
+// Note: Test playback also loops for continuous testing
 func (p *Player) playbackLoop(stream *AmbientStream) {
 	defer stream.wg.Done()
 
@@ -381,12 +390,7 @@ func (p *Player) playbackLoop(stream *AmbientStream) {
 				// Don't loop on error, exit
 				return
 			}
-
-			// If test mode (non-looping), exit after one play
-			if stream.isTest {
-				stream.isPlaying = false
-				return
-			}
+			// Loop continuously (both regular and test playback)
 		}
 	}
 }
