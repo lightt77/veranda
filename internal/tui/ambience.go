@@ -254,7 +254,7 @@ func (m *Model) toggleAmbienceEnabled() {
 
 // saveAmbienceSettings saves the ambience sound configuration
 func (m *Model) saveAmbienceSettings() {
-	if err := m.userConfig.Save(m.configDir); err != nil {
+	if err := m.userConfig.Save(m.settingsRepo); err != nil {
 		m.setSettingsMessage(fmt.Sprintf("Error saving: %v", err))
 	} else {
 		m.setSettingsMessage("Ambience settings saved!")

@@ -31,8 +31,9 @@ var tuiCmd = &cobra.Command{
 		defer database.Close()
 
 		citiesRepo := repository.NewCitiesRepository(database)
+		settingsRepo := repository.NewSettingsRepository(database)
 
-		if err := tui.Run(cfg.DaemonPort, citiesRepo); err != nil {
+		if err := tui.Run(cfg.DaemonPort, citiesRepo, settingsRepo); err != nil {
 			fmt.Printf("Error running TUI: %v\n", err)
 		}
 	},

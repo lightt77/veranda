@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/lightt77/veranda/internal/config"
 	"github.com/lightt77/veranda/internal/repository"
 	"github.com/lightt77/veranda/internal/tui/starfield"
 )
@@ -222,7 +223,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.activeTab == 3 && m.selectingSoundFile {
 				if m.selectedSoundIdx < len(m.availableSoundFiles) {
 					m.userConfig.TimerCompletionSound = m.availableSoundFiles[m.selectedSoundIdx]
-					if err := m.userConfig.Save(m.configDir); err != nil {
+					if err := m.userConfig.Save(m.settingsRepo); err != nil {
 						m.setSettingsMessage(fmt.Sprintf("Error saving: %v", err))
 					} else {
 						m.setSettingsMessage("Sound updated!")
@@ -1014,8 +1015,8 @@ func (m Model) renderSkyfield() string {
 }
 
 // Run starts the TUI
-func Run(port int, citiesRepo *repository.CitiesRepository) error {
-	p := tea.NewProgram(New(port, citiesRepo), tea.WithAltScreen())
+func Run(port int, citiesRepo *repository.CitiesRepository, settingsRepo config.SettingsRepository) error {
+	p := tea.NewProgram(New(port, citiesRepo, settingsRepo), tea.WithAltScreen())
 	_, err := p.Run()
 	return err
 }
