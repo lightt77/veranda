@@ -156,9 +156,9 @@ func deleteStopwatchCmd(client *daemon.Client, stopwatches []map[string]interfac
 	}
 }
 
-// toggleAmbientTestCmd creates a command to toggle test playback for the selected ambient sound
+// toggleAmbienceTestCmd creates a command to toggle test playback for the selected ambience sound
 // This runs asynchronously to avoid blocking the UI during fade operations
-func toggleAmbientTestCmd(player *audio.Player, sounds []config.AmbientSoundConfig, displayOrder []int, selectedIdx int) tea.Cmd {
+func toggleAmbienceTestCmd(player *audio.Player, sounds []config.AmbienceSoundConfig, displayOrder []int, selectedIdx int) tea.Cmd {
 	return func() tea.Msg {
 		if player == nil || selectedIdx < 0 || selectedIdx >= len(displayOrder) {
 			return nil
