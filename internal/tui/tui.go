@@ -133,34 +133,46 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "up", "k":
 			if m.activeTab == 1 {
 				newM, _, _ := m.handleAmbienceKey(msg.String())
+				newM.adjustScrollForSelection()
 				return newM, nil
 			} else if m.activeTab == 0 {
 				m.navigateTimersStopwatches(-1)
+				m.adjustScrollForSelection()
 			} else if m.activeTab == 2 {
 				// Skyfield tab navigation
 				if m.skyfieldSelectedIdx > 0 {
 					m.skyfieldSelectedIdx--
+					m.adjustScrollForSelection()
 				}
 			} else {
-				m.selectedIdx = max(0, m.selectedIdx-1)
+				if m.selectedIdx > 0 {
+					m.selectedIdx--
+					m.adjustScrollForSelection()
+				}
 			}
 		case "down", "j":
 			if m.activeTab == 1 {
 				newM, _, _ := m.handleAmbienceKey(msg.String())
+				newM.adjustScrollForSelection()
 				return newM, nil
 			} else if m.activeTab == 0 {
 				m.navigateTimersStopwatches(1)
+				m.adjustScrollForSelection()
 			} else if m.activeTab == 2 {
 				// Skyfield tab navigation
 				if m.skyfieldSelectedIdx < 2 {
 					m.skyfieldSelectedIdx++
+					m.adjustScrollForSelection()
 				}
 			} else {
 				maxIdx := len(m.timers) - 1
 				if m.activeTab == 3 {
 					maxIdx = len(m.stopwatches) - 1
 				}
-				m.selectedIdx = min(maxIdx, m.selectedIdx+1)
+				if m.selectedIdx < maxIdx {
+					m.selectedIdx++
+					m.adjustScrollForSelection()
+				}
 			}
 		case "left":
 			if m.activeTab == 0 && m.showTimers && m.showStopwatches {
@@ -1751,6 +1763,78 @@ func (m *Model) scrollContentViewport(delta int) {
 	if m.contentScrollOffset > maxOffset {
 		m.contentScrollOffset = maxOffset
 	}
+}
+
+// adjustScrollForSelection adjusts contentScrollOffset to keep selected item visible
+func (m *Model) adjustScrollForSelection() {
+	// Get the line number of the currently selected item
+	selectedLine := m.getSelectedItemLine()
+	if selectedLine < 0 {
+		return // Selection not found or not applicable
+	}
+
+	// If selected item is above viewport, scroll up
+	if selectedLine < m.contentScrollOffset {
+		m.contentScrollOffset = selectedLine
+	}
+
+	// If selected item is below viewport, scroll down
+	if selectedLine >= m.contentScrollOffset+ContentAreaHeight {
+		m.contentScrollOffset = selectedLine - ContentAreaHeight + 1
+	}
+
+	// Clamp to valid range
+	maxOffset := m.getMaxContentScrollOffset()
+	if m.contentScrollOffset < 0 {
+		m.contentScrollOffset = 0
+	}
+	if m.contentScrollOffset > maxOffset {
+		m.contentScrollOffset = maxOffset
+	}
+}
+
+// getSelectedItemLine returns the line number of the currently selected item
+// Returns -1 if not found or not applicable for current tab
+func (m Model) getSelectedItemLine() int {
+	var content string
+	switch m.activeTab {
+	case 0:
+		content = m.renderTimersStopwatches()
+	case 1:
+		content = m.renderAmbience()
+	case 2:
+		content = m.renderSkyfield()
+	case 3:
+		content = m.renderPrefs()
+	default:
+		return -1
+	}
+
+	lines := strings.Split(content, "\n")
+
+	// Find which line contains the selection indicator (" > ")
+	for i, line := range lines {
+		// Check for selection indicator at start of line
+		if strings.HasPrefix(line, "> ") || strings.Contains(line, " > ") {
+			// For ambience tab, check if this matches the selected index
+			if m.activeTab == 1 {
+				// Count how many items appear before this line
+				itemCount := 0
+				for j := 0; j < i; j++ {
+					if strings.Contains(lines[j], "[") && strings.Contains(lines[j], "]") {
+						itemCount++
+					}
+				}
+				if itemCount == m.ambienceSelectedIdx {
+					return i
+				}
+			} else {
+				return i
+			}
+		}
+	}
+
+	return -1
 }
 
 // getMaxContentScrollOffset returns the maximum valid scroll offset for current tab
