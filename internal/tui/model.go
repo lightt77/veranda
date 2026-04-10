@@ -23,6 +23,9 @@ const (
 	ModeRealistic
 )
 
+// ContentAreaHeight is the fixed height of the content viewport at the bottom
+const ContentAreaHeight = 10
+
 // Model represents the TUI state
 type Model struct {
 	client      *daemon.Client
@@ -30,6 +33,9 @@ type Model struct {
 	stopwatches []map[string]interface{}
 	activeTab   int // 0 = timers/stopwatches, 1 = ambience, 2 = skyfield, 3 = prefs
 	selectedIdx int // currently selected item index (for prefs tab)
+
+	// Content viewport scroll position (resets on tab switch)
+	contentScrollOffset int
 
 	// Debug mode for diagnostics
 	debugMode bool
