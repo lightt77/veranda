@@ -153,6 +153,7 @@ func LoadUserConfig(repo SettingsRepository) *UserConfig {
 
 // Save persists the user configuration to the database
 func (c *UserConfig) Save(repo SettingsRepository) error {
+	fmt.Printf("[Config] Saving ambience_enabled=%v\n", c.AmbienceEnabled)
 	// Save each setting
 	if err := repo.Set("timer_completion_sound", c.TimerCompletionSound); err != nil {
 		return fmt.Errorf("failed to save timer_completion_sound: %w", err)
