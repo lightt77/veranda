@@ -26,8 +26,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 
 		// Calculate star area height
-		contentHeight := 14
-		paddingBottom := 2
+		contentHeight := 6
+		paddingBottom := 0
 		starAreaHeight := m.height - contentHeight - paddingBottom
 		if starAreaHeight < 8 {
 			starAreaHeight = 8
@@ -99,12 +99,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Stop any test playback before quitting
 			return m, tea.Batch(m.stopAllTestPlayback(), tea.Quit)
 		case "tab", "right":
+			// Stop test playback when leaving ambient tab
+			if m.activeTab == 2 {
+				m.stopAllTestPlaybackSync()
+			}
 			m.activeTab = (m.activeTab + 1) % 4
 			m.selectedIdx = 0
 			m.selectingSoundFile = false
 			m.editingAmbientVolume = false
 			m.editingChimeVolume = false
 		case "shift+tab", "left":
+			// Stop test playback when leaving ambient tab
+			if m.activeTab == 2 {
+				m.stopAllTestPlaybackSync()
+			}
 			m.activeTab = (m.activeTab - 1 + 4) % 4
 			m.selectedIdx = 0
 			m.selectingSoundFile = false
@@ -173,14 +181,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				newM, cmd, _ := m.handleAmbientKey("t")
 				return newM, cmd
 			}
+		case "a":
+			if m.activeTab == 2 {
+				// Toggle global ambient on/off
+				newM, _, _ := m.handleAmbientKey("a")
+				return newM, nil
+			}
 		case "s":
 			if m.activeTab == 1 {
 				// Quick stopwatch creation
 				return m, createStopwatchCmd(m.client)
-			} else if m.activeTab == 2 {
-				// Save ambient sound settings
-				newM, _, _ := m.handleAmbientKey("s")
-				return newM, nil
 			}
 		case "m":
 			// Toggle starfield mode
@@ -238,7 +248,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		m.lastUpdate = time.Now()
-		return m, tickCmd()
+		// Refresh timer/stopwatch data from daemon on every tick
+		return m, tea.Batch(tickCmd(), refreshCmd(m.client))
 
 	case refreshMsg:
 		return m, refreshCmd(m.client)
@@ -260,8 +271,8 @@ func (m Model) View() string {
 	var s strings.Builder
 
 	// Calculate star area height
-	contentHeight := 14
-	paddingBottom := 2
+	contentHeight := 6
+	paddingBottom := 0
 	starAreaHeight := m.height - contentHeight - paddingBottom
 	if starAreaHeight < 8 {
 		starAreaHeight = 8
@@ -592,7 +603,7 @@ func (m *Model) searchCities() {
 func (m Model) renderContent() string {
 	var s string
 	paddingLeft := 2
-	paddingBottom := 1
+	paddingBottom := 0
 
 	// Add bottom padding (empty lines)
 	for i := 0; i < paddingBottom; i++ {
