@@ -95,6 +95,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Handle command mode first
+		if m.commandMode {
+			switch msg.String() {
+			case "esc":
+				m.commandMode = false
+				m.commandInput = ""
+				m.commandError = ""
+				return m, nil
+			case "enter":
+				return m.executeCommand()
+			case "backspace":
+				if len(m.commandInput) > 0 {
+					m.commandInput = m.commandInput[:len(m.commandInput)-1]
+				}
+				return m, nil
+			default:
+				// Append character to command input
+				if len(msg.String()) == 1 {
+					m.commandInput += msg.String()
+				}
+				return m, nil
+			}
+		}
+
 		switch msg.String() {
 		case "q", "ctrl+c":
 			// Stop any test playback before quitting
@@ -114,6 +138,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.activeTab == 1 {
 				newM, _, _ := m.handleAmbienceKey(msg.String())
 				return newM, nil
+			} else if m.activeTab == 0 {
+				m.navigateTimersStopwatches(-1)
 			} else {
 				m.selectedIdx = max(0, m.selectedIdx-1)
 			}
@@ -121,19 +147,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.activeTab == 1 {
 				newM, _, _ := m.handleAmbienceKey(msg.String())
 				return newM, nil
+			} else if m.activeTab == 0 {
+				m.navigateTimersStopwatches(1)
 			} else {
 				maxIdx := len(m.timers) - 1
-				if m.activeTab == 0 {
+				if m.activeTab == 3 {
 					maxIdx = len(m.stopwatches) - 1
 				}
 				m.selectedIdx = min(maxIdx, m.selectedIdx+1)
 			}
+		case "left":
+			if m.activeTab == 0 && m.showTimers && m.showStopwatches {
+				m.activeColumn = 0
+			}
+		case "right":
+			if m.activeTab == 0 && m.showTimers && m.showStopwatches {
+				m.activeColumn = 1
+			}
 		case " ", "p":
 			// Pause/resume selected timer or stopwatch
-			if m.activeTab == 0 && m.selectedIdx < len(m.timers) {
-				return m, toggleTimerCmd(m.client, m.timers, m.selectedIdx, m.showCompleted)
-			} else if m.activeTab == 0 && m.selectedIdx < len(m.stopwatches) {
-				return m, toggleStopwatchCmd(m.client, m.stopwatches, m.selectedIdx)
+			if m.activeTab == 0 {
+				return m.handleTimersStopwatchesToggle()
 			} else if m.activeTab == 1 {
 				// Toggle ambience enabled
 				newM, _, _ := m.handleAmbienceKey(" ")
@@ -141,10 +175,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "d":
 			// Delete selected timer or stopwatch
-			if m.activeTab == 0 && m.selectedIdx < len(m.timers) {
-				return m, deleteTimerCmd(m.client, m.timers, m.selectedIdx, m.showCompleted)
-			} else if m.activeTab == 0 && m.selectedIdx < len(m.stopwatches) {
-				return m, deleteStopwatchCmd(m.client, m.stopwatches, m.selectedIdx)
+			if m.activeTab == 0 {
+				return m.handleTimersStopwatchesDelete()
 			}
 		case "r":
 			if m.activeTab == 1 {
@@ -155,15 +187,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, refreshCmd(m.client)
 			}
 		case "h":
-			// Toggle showing completed timers
+			// Toggle showing completed/archived items
 			if m.activeTab == 0 {
 				m.showCompleted = !m.showCompleted
-				m.selectedIdx = 0
+				// Reset selections
+				m.timerSelectedIdx = 0
+				m.stopwatchSelectedIdx = 0
+				m.timerScrollOffset = 0
+				m.stopwatchScrollOffset = 0
 			}
 		case "t":
 			if m.activeTab == 0 {
-				// Quick timer creation
-				return m, createTimerCmd(m.client)
+				// Toggle show timers
+				m.showTimers = !m.showTimers
+				if !m.showTimers && !m.showStopwatches {
+					m.showStopwatches = true // Ensure at least one is visible
+				}
+				m.activeColumn = 0
 			} else if m.activeTab == 1 {
 				// Test toggle for ambience sound - use async command
 				if err := m.initTestAudioPlayer(); err != nil {
@@ -172,6 +212,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				newM, cmd, _ := m.handleAmbienceKey("t")
 				return newM, cmd
+			}
+		case "s":
+			if m.activeTab == 0 {
+				// Toggle show stopwatches
+				m.showStopwatches = !m.showStopwatches
+				if !m.showTimers && !m.showStopwatches {
+					m.showTimers = true // Ensure at least one is visible
+				}
+				m.activeColumn = 1
+			}
+		case "/":
+			// Enter command mode
+			if m.activeTab == 0 {
+				m.commandMode = true
+				m.commandInput = ""
+				m.commandError = ""
 			}
 		case "a":
 			if m.activeTab == 1 {
@@ -708,21 +764,40 @@ func (m Model) renderContent() string {
 				lipgloss.NewStyle().Foreground(overlay0).Render(":quit")
 		}
 	default:
-		// Timer/stopwatch tabs
-		helpText = lipgloss.NewStyle().Foreground(mauve).Render("↑↓") +
-			lipgloss.NewStyle().Foreground(overlay0).Render("/jk:select ") +
-			lipgloss.NewStyle().Foreground(mauve).Render("space/p") +
-			lipgloss.NewStyle().Foreground(overlay0).Render(":pause ") +
-			lipgloss.NewStyle().Foreground(mauve).Render("d") +
-			lipgloss.NewStyle().Foreground(overlay0).Render(":delete ") +
-			lipgloss.NewStyle().Foreground(mauve).Render("tab") +
-			lipgloss.NewStyle().Foreground(overlay0).Render(":switch ") +
-			lipgloss.NewStyle().Foreground(mauve).Render("t/s") +
-			lipgloss.NewStyle().Foreground(overlay0).Render(":new ") +
-			lipgloss.NewStyle().Foreground(mauve).Render("r") +
-			lipgloss.NewStyle().Foreground(overlay0).Render(":refresh ") +
-			lipgloss.NewStyle().Foreground(mauve).Render("q") +
-			lipgloss.NewStyle().Foreground(overlay0).Render(":quit")
+		if m.commandMode {
+			// Command mode
+			helpText = lipgloss.NewStyle().Foreground(mauve).Render("enter") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":execute ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("esc") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":cancel")
+		} else {
+			// Timers/Stopwatches tab
+			helpText = lipgloss.NewStyle().Foreground(mauve).Render("↑↓") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":navigate ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("←/→") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":column ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("space/p") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":pause ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("d") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":delete ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("tab") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":switch ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("t/s/h") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":toggle ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("/") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":command ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("q") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":quit")
+		}
+	}
+
+	// Show command mode input line if active
+	if m.commandMode {
+		cmdLine := lipgloss.NewStyle().Foreground(mauve).Render(":"+m.commandInput) + "_"
+		if m.commandError != "" {
+			cmdLine += " " + lipgloss.NewStyle().Foreground(red).Render(m.commandError)
+		}
+		s += leftPad + cmdLine + "\n"
 	}
 
 	s += leftPad + statusLine + helpText + "\n"
@@ -1148,6 +1223,269 @@ func (m Model) renderStopwatchesSection(stopwatches []map[string]interface{}, fu
 	}
 
 	return content
+}
+
+// navigateTimersStopwatches handles navigation within the timers/stopwatches tab
+// delta: -1 for up, 1 for down
+func (m *Model) navigateTimersStopwatches(delta int) {
+	if m.activeColumn == 0 && m.showTimers {
+		// Navigate timers
+		visibleTimers := m.getVisibleTimers()
+		if len(visibleTimers) == 0 {
+			return
+		}
+
+		newIdx := m.timerSelectedIdx + delta
+		if newIdx < 0 {
+			newIdx = 0
+		}
+		if newIdx >= len(visibleTimers) {
+			newIdx = len(visibleTimers) - 1
+		}
+
+		m.timerSelectedIdx = newIdx
+
+		// Update scroll offset to keep selection visible
+		const maxVisible = 3
+		if m.timerSelectedIdx < m.timerScrollOffset {
+			m.timerScrollOffset = m.timerSelectedIdx
+		}
+		if m.timerSelectedIdx >= m.timerScrollOffset+maxVisible {
+			m.timerScrollOffset = m.timerSelectedIdx - maxVisible + 1
+		}
+	} else if m.activeColumn == 1 && m.showStopwatches {
+		// Navigate stopwatches
+		visibleStopwatches := m.getVisibleStopwatches()
+		if len(visibleStopwatches) == 0 {
+			return
+		}
+
+		newIdx := m.stopwatchSelectedIdx + delta
+		if newIdx < 0 {
+			newIdx = 0
+		}
+		if newIdx >= len(visibleStopwatches) {
+			newIdx = len(visibleStopwatches) - 1
+		}
+
+		m.stopwatchSelectedIdx = newIdx
+
+		// Update scroll offset to keep selection visible
+		const maxVisible = 3
+		if m.stopwatchSelectedIdx < m.stopwatchScrollOffset {
+			m.stopwatchScrollOffset = m.stopwatchSelectedIdx
+		}
+		if m.stopwatchSelectedIdx >= m.stopwatchScrollOffset+maxVisible {
+			m.stopwatchScrollOffset = m.stopwatchSelectedIdx - maxVisible + 1
+		}
+	}
+}
+
+// handleTimersStopwatchesToggle handles pause/resume for the selected timer or stopwatch
+func (m Model) handleTimersStopwatchesToggle() (tea.Model, tea.Cmd) {
+	if m.activeColumn == 0 && m.showTimers {
+		visibleTimers := m.getVisibleTimers()
+		if m.timerSelectedIdx < len(visibleTimers) {
+			// Find the actual index in m.timers
+			actualIdx := m.findTimerActualIndex(visibleTimers[m.timerSelectedIdx])
+			if actualIdx >= 0 {
+				return m, toggleTimerCmd(m.client, m.timers, actualIdx, m.showCompleted)
+			}
+		}
+	} else if m.activeColumn == 1 && m.showStopwatches {
+		visibleStopwatches := m.getVisibleStopwatches()
+		if m.stopwatchSelectedIdx < len(visibleStopwatches) {
+			// Find the actual index in m.stopwatches
+			actualIdx := m.findStopwatchActualIndex(visibleStopwatches[m.stopwatchSelectedIdx])
+			if actualIdx >= 0 {
+				return m, toggleStopwatchCmd(m.client, m.stopwatches, actualIdx)
+			}
+		}
+	}
+	return m, nil
+}
+
+// handleTimersStopwatchesDelete handles delete for the selected timer or stopwatch
+func (m Model) handleTimersStopwatchesDelete() (tea.Model, tea.Cmd) {
+	if m.activeColumn == 0 && m.showTimers {
+		visibleTimers := m.getVisibleTimers()
+		if m.timerSelectedIdx < len(visibleTimers) {
+			actualIdx := m.findTimerActualIndex(visibleTimers[m.timerSelectedIdx])
+			if actualIdx >= 0 {
+				return m, deleteTimerCmd(m.client, m.timers, actualIdx, m.showCompleted)
+			}
+		}
+	} else if m.activeColumn == 1 && m.showStopwatches {
+		visibleStopwatches := m.getVisibleStopwatches()
+		if m.stopwatchSelectedIdx < len(visibleStopwatches) {
+			actualIdx := m.findStopwatchActualIndex(visibleStopwatches[m.stopwatchSelectedIdx])
+			if actualIdx >= 0 {
+				return m, deleteStopwatchCmd(m.client, m.stopwatches, actualIdx)
+			}
+		}
+	}
+	return m, nil
+}
+
+// executeCommand parses and executes a command from command mode
+// Commands: :t 25m "name" (timer), :s "name" (stopwatch)
+func (m Model) executeCommand() (tea.Model, tea.Cmd) {
+	cmd := strings.TrimSpace(m.commandInput)
+	if cmd == "" {
+		m.commandMode = false
+		m.commandInput = ""
+		return m, nil
+	}
+
+	// Remove leading colon if present
+	if strings.HasPrefix(cmd, ":") {
+		cmd = cmd[1:]
+	}
+
+	parts := strings.Fields(cmd)
+	if len(parts) == 0 {
+		m.commandError = "Empty command"
+		return m, nil
+	}
+
+	cmdType := parts[0]
+
+	switch cmdType {
+	case "t", "timer":
+		return m.parseAndCreateTimer(parts[1:])
+	case "s", "sw", "stopwatch":
+		return m.parseAndCreateStopwatch(parts[1:])
+	default:
+		m.commandError = fmt.Sprintf("Unknown command: %s", cmdType)
+		return m, nil
+	}
+}
+
+// parseAndCreateTimer parses timer creation arguments and returns a command
+// Format: 25m "name" or 1h30m "name" or just 25m
+func (m Model) parseAndCreateTimer(args []string) (tea.Model, tea.Cmd) {
+	if len(args) == 0 {
+		m.commandError = "Usage: :t <duration> [\"name\"]"
+		return m, nil
+	}
+
+	// Parse duration
+	durationMs, err := parseDuration(args[0])
+	if err != nil {
+		m.commandError = fmt.Sprintf("Invalid duration: %v", err)
+		return m, nil
+	}
+
+	// Parse label (optional, can be quoted)
+	label := "Timer"
+	if len(args) > 1 {
+		label = strings.Join(args[1:], " ")
+		label = strings.Trim(label, "\"")
+	}
+
+	m.commandMode = false
+	m.commandInput = ""
+	m.commandError = ""
+
+	return m, createTimerWithLabelCmd(m.client, label, durationMs)
+}
+
+// parseAndCreateStopwatch parses stopwatch creation arguments and returns a command
+// Format: "name" or (no args for default)
+func (m Model) parseAndCreateStopwatch(args []string) (tea.Model, tea.Cmd) {
+	label := "Stopwatch"
+	if len(args) > 0 {
+		label = strings.Join(args, " ")
+		label = strings.Trim(label, "\"")
+	}
+
+	m.commandMode = false
+	m.commandInput = ""
+	m.commandError = ""
+
+	return m, createStopwatchWithLabelCmd(m.client, label)
+}
+
+// parseDuration parses a duration string like "25m", "1h30m", "30s"
+func parseDuration(s string) (int64, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, fmt.Errorf("empty duration")
+	}
+
+	var totalMs int64
+	var numStr string
+
+	for _, ch := range s {
+		switch ch {
+		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+			numStr += string(ch)
+		case 'h':
+			if numStr == "" {
+				return 0, fmt.Errorf("invalid duration format")
+			}
+			hours := parseInt64(numStr)
+			totalMs += hours * 60 * 60 * 1000
+			numStr = ""
+		case 'm':
+			if numStr == "" {
+				return 0, fmt.Errorf("invalid duration format")
+			}
+			mins := parseInt64(numStr)
+			totalMs += mins * 60 * 1000
+			numStr = ""
+		case 's':
+			if numStr == "" {
+				return 0, fmt.Errorf("invalid duration format")
+			}
+			secs := parseInt64(numStr)
+			totalMs += secs * 1000
+			numStr = ""
+		default:
+			return 0, fmt.Errorf("invalid character in duration: %c", ch)
+		}
+	}
+
+	if numStr != "" {
+		return 0, fmt.Errorf("duration must end with h, m, or s")
+	}
+
+	if totalMs == 0 {
+		return 0, fmt.Errorf("duration cannot be zero")
+	}
+
+	return totalMs, nil
+}
+
+// parseInt64 parses a string to int64
+func parseInt64(s string) int64 {
+	var result int64
+	for _, ch := range s {
+		result = result*10 + int64(ch-'0')
+	}
+	return result
+}
+
+// findTimerActualIndex finds the actual index in m.timers for a visible timer
+func (m Model) findTimerActualIndex(visibleTimer map[string]interface{}) int {
+	visibleID := int64(visibleTimer["id"].(float64))
+	for i, t := range m.timers {
+		if int64(t["id"].(float64)) == visibleID {
+			return i
+		}
+	}
+	return -1
+}
+
+// findStopwatchActualIndex finds the actual index in m.stopwatches for a visible stopwatch
+func (m Model) findStopwatchActualIndex(visibleStopwatch map[string]interface{}) int {
+	visibleID := int64(visibleStopwatch["id"].(float64))
+	for i, sw := range m.stopwatches {
+		if int64(sw["id"].(float64)) == visibleID {
+			return i
+		}
+	}
+	return -1
 }
 
 // renderPrefs renders the preferences/settings page

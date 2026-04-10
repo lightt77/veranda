@@ -59,6 +59,28 @@ func createStopwatchCmd(client *daemon.Client) tea.Cmd {
 	}
 }
 
+// createTimerWithLabelCmd creates a command to create a new timer with custom label and duration
+func createTimerWithLabelCmd(client *daemon.Client, label string, durationMs int64) tea.Cmd {
+	return func() tea.Msg {
+		_, err := client.CreateTimer(label, durationMs, true)
+		if err != nil {
+			return errMsg{err}
+		}
+		return refreshMsg{}
+	}
+}
+
+// createStopwatchWithLabelCmd creates a command to create a new stopwatch with custom label
+func createStopwatchWithLabelCmd(client *daemon.Client, label string) tea.Cmd {
+	return func() tea.Msg {
+		_, err := client.CreateStopwatch(label, true)
+		if err != nil {
+			return errMsg{err}
+		}
+		return refreshMsg{}
+	}
+}
+
 // getVisibleTimerIndex converts selected index to actual timer index accounting for filtered completed
 func getVisibleTimerIndex(timers []map[string]interface{}, visibleIdx int, showCompleted bool) int {
 	if showCompleted {
