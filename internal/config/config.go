@@ -46,7 +46,7 @@ const (
 const (
 	DefaultTimerCompletionSound = "freesound_community-bell-98033.mp3"
 	DefaultChimeVolume          = 0.5 // 50% volume
-	DefaultAmbientVolume        = 1.0 // 100% volume
+	DefaultAmbienceVolume       = 1.0 // 100% volume
 )
 
 // Config returns the full application configuration
@@ -82,8 +82,8 @@ type AppConfig struct {
 	DaemonPort   int
 }
 
-// AmbientSoundConfig holds configuration for a single ambient sound
-type AmbientSoundConfig struct {
+// AmbienceSoundConfig holds configuration for a single ambience sound
+type AmbienceSoundConfig struct {
 	Filename string  `json:"filename"`
 	Volume   float64 `json:"volume"`
 	Enabled  bool    `json:"enabled"`
@@ -91,10 +91,12 @@ type AmbientSoundConfig struct {
 
 // UserConfig holds user-editable configuration settings
 type UserConfig struct {
-	TimerCompletionSound string               `json:"timer_completion_sound"`
-	ChimeVolume          float64              `json:"chime_volume"`
-	AmbientEnabled       bool                 `json:"ambient_enabled"` // Global ambient on/off switch
-	AmbientSounds        []AmbientSoundConfig `json:"ambient_sounds"`
+	TimerCompletionSound string                `json:"timer_completion_sound"`
+	ChimeVolume          float64               `json:"chime_volume"`
+	AmbienceEnabled      bool                  `json:"ambience_enabled"` // Global ambience on/off switch
+	AmbienceSounds       []AmbienceSoundConfig `json:"ambience_sounds"`
+	SkyfieldMode         string                `json:"skyfield_mode"`
+	SkyfieldShowNames    bool                  `json:"skyfield_show_names"`
 }
 
 // DefaultUserConfig returns the default user configuration
@@ -102,8 +104,10 @@ func DefaultUserConfig() *UserConfig {
 	return &UserConfig{
 		TimerCompletionSound: DefaultTimerCompletionSound,
 		ChimeVolume:          DefaultChimeVolume,
-		AmbientEnabled:       true,                   // Ambient sounds enabled by default
-		AmbientSounds:        []AmbientSoundConfig{}, // Empty by default, populated on first run with available files
+		AmbienceEnabled:      true,                    // Ambience sounds enabled by default
+		AmbienceSounds:       []AmbienceSoundConfig{}, // Empty by default, populated on first run with available files
+		SkyfieldMode:         "random",
+		SkyfieldShowNames:    false,
 	}
 }
 
@@ -136,7 +140,10 @@ func LoadUserConfig(configDir string) *UserConfig {
 	if cfg.ChimeVolume == 0 {
 		cfg.ChimeVolume = DefaultChimeVolume
 	}
-	// Note: AmbientSounds is intentionally not auto-populated here.
+	if cfg.SkyfieldMode == "" {
+		cfg.SkyfieldMode = "random"
+	}
+	// Note: AmbienceSounds is intentionally not auto-populated here.
 	// The TUI will initialize it with available files on first access.
 
 	return &cfg
