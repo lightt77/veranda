@@ -13,20 +13,20 @@ import (
 
 // Service handles desktop notifications
 type Service struct {
-	enabled     bool
-	mutex       sync.RWMutex
-	appName     string
-	audioPlayer *audio.Player
-	configDir   string // Directory to reload config from
+	enabled      bool
+	mutex        sync.RWMutex
+	appName      string
+	audioPlayer  *audio.Player
+	settingsRepo config.SettingsRepository
 }
 
 // NewService creates a new notification service
-func NewService(appName string, audioPlayer *audio.Player, configDir string) *Service {
+func NewService(appName string, audioPlayer *audio.Player, settingsRepo config.SettingsRepository) *Service {
 	return &Service{
-		enabled:     true,
-		appName:     appName,
-		audioPlayer: audioPlayer,
-		configDir:   configDir,
+		enabled:      true,
+		appName:      appName,
+		audioPlayer:  audioPlayer,
+		settingsRepo: settingsRepo,
 	}
 }
 
@@ -80,7 +80,7 @@ func (s *Service) Beep() error {
 }
 
 // PlayTimerCompletionSound plays the configured timer completion sound
-// Reloads config from disk to pick up changes made by TUI
+// Reloads config from database to pick up changes made by TUI
 // Falls back to system beep if sound file doesn't exist or audio player is unavailable
 func (s *Service) PlayTimerCompletionSound() error {
 	s.mutex.RLock()
@@ -89,11 +89,10 @@ func (s *Service) PlayTimerCompletionSound() error {
 		return nil
 	}
 	audioPlayer := s.audioPlayer
-	configDir := s.configDir
 	s.mutex.RUnlock()
 
-	// Reload config from disk to get latest changes
-	userConfig := config.LoadUserConfig(configDir)
+	// Reload config from database to get latest changes
+	userConfig := config.LoadUserConfig(s.settingsRepo)
 
 	// If we have an audio player and config, try to play the configured sound
 	if audioPlayer != nil {
