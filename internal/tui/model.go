@@ -25,16 +25,30 @@ const (
 
 // Model represents the TUI state
 type Model struct {
-	client        *daemon.Client
-	timers        []map[string]interface{}
-	stopwatches   []map[string]interface{}
-	activeTab     int  // 0 = timers/stopwatches, 1 = ambience, 2 = skyfield, 3 = prefs
-	showCompleted bool // toggle to show/hide completed timers
-	selectedIdx   int  // currently selected item index
-	width         int
-	height        int
-	err           error
-	lastUpdate    time.Time
+	client      *daemon.Client
+	timers      []map[string]interface{}
+	stopwatches []map[string]interface{}
+	activeTab   int // 0 = timers/stopwatches, 1 = ambience, 2 = skyfield, 3 = prefs
+	selectedIdx int // currently selected item index (for prefs tab)
+
+	// Timers/Stopwatches tab state
+	showTimers            bool // 't' key - show timers section
+	showStopwatches       bool // 's' key - show stopwatches section
+	showCompleted         bool // 'h' key - show completed/archived items
+	timerSelectedIdx      int  // selection within visible timers
+	stopwatchSelectedIdx  int  // selection within visible stopwatches
+	activeColumn          int  // 0 = timers, 1 = stopwatches (when both visible)
+	timerScrollOffset     int  // scroll position for timers
+	stopwatchScrollOffset int  // scroll position for stopwatches
+
+	// Command mode for creating timers/stopwatches
+	commandMode  bool   // '/' enters command mode
+	commandInput string // current command being typed
+	commandError string // error message to display
+	width        int
+	height       int
+	err          error
+	lastUpdate   time.Time
 
 	// Starfield mode
 	starfieldMode      StarfieldMode
@@ -180,6 +194,15 @@ func New(port int, citiesRepo *repository.CitiesRepository, settingsRepo config.
 		availableAmbienceFiles: availableAmbience,
 		ambienceDisplayOrder:   displayOrder,
 		ambienceSelectedIdx:    0,
+		// Timers/Stopwatches tab defaults
+		showTimers:            true,
+		showStopwatches:       true,
+		showCompleted:         false,
+		timerSelectedIdx:      0,
+		stopwatchSelectedIdx:  0,
+		activeColumn:          0,
+		timerScrollOffset:     0,
+		stopwatchScrollOffset: 0,
 	}
 }
 
