@@ -26,15 +26,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
-		// Calculate star area height
-		contentHeight := 6
-		paddingBottom := 0
+		// Resize both starfields to fill area above content
+		// Keep content area fixed at 14 lines + 2 padding to prevent rendering artifacts
+		contentHeight := 14
+		paddingBottom := 2
 		starAreaHeight := m.height - contentHeight - paddingBottom
 		if starAreaHeight < 8 {
 			starAreaHeight = 8
 		}
-
-		// Resize both starfields
 		m.randomStarfield.Resize(m.width, m.height, starAreaHeight)
 		m.realisticStarfield.Resize(m.width, m.height, starAreaHeight)
 
@@ -132,7 +131,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.selectedIdx = 0
 			m.selectingSoundFile = false
 			m.editingAmbienceVolume = false
-			m.editingChimeVolume = false
 			m.editingChimeVolume = false
 		case "up", "k":
 			if m.activeTab == 1 {
@@ -339,27 +337,57 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the TUI
 func (m Model) View() string {
-	var s strings.Builder
+	if !m.client.IsRunning() {
+		return "\n  ⚠️  Daemon is not running.\n\n  Start it with: veranda daemon\n\n  Press 'q' to quit.\n"
+	}
 
-	// Calculate star area height
-	contentHeight := 6
-	paddingBottom := 0
+	// Handle case where dimensions aren't set yet
+	if m.width == 0 || m.height == 0 {
+		return "Loading..."
+	}
+
+	// Generate stars if we don't have any
+	if m.starfieldMode == ModeRandom && len(m.randomStarfield.GetStars()) == 0 {
+		contentHeight := 14
+		paddingBottom := 2
+		starAreaHeight := m.height - contentHeight - paddingBottom
+		if starAreaHeight < 8 {
+			starAreaHeight = 8
+		}
+		m.randomStarfield.Resize(m.width, m.height, starAreaHeight)
+	}
+
+	// Calculate star area dimensions
+	contentHeight := 14
+	paddingBottom := 2
 	starAreaHeight := m.height - contentHeight - paddingBottom
 	if starAreaHeight < 8 {
 		starAreaHeight = 8
 	}
 
-	// Render starfield or city picker
+	// Build starfield
+	var starfieldStr string
 	if m.showCityPicker {
-		s.WriteString(m.renderCityPicker(starAreaHeight))
+		starfieldStr = m.renderCityPicker(starAreaHeight)
+	} else if m.starfieldMode == ModeRealistic {
+		starfieldStr = m.renderRealisticStarfield(starAreaHeight)
 	} else {
-		s.WriteString(m.renderStarfield(starAreaHeight))
+		starfieldStr = m.renderRandomStarfield(starAreaHeight)
 	}
 
-	// Render content at bottom
-	s.WriteString(m.renderContent())
+	// Get content
+	content := m.renderContent()
 
-	return s.String()
+	// Use lipgloss to place content at bottom with fixed height
+	// This ensures consistent rendering and prevents remnants
+	contentArea := lipgloss.NewStyle().
+		Height(contentHeight).
+		Width(m.width).
+		Align(lipgloss.Left, lipgloss.Bottom).
+		Render(content)
+
+	// Join starfield and content
+	return starfieldStr + "\n" + contentArea
 }
 
 // renderStarfield renders the appropriate starfield
@@ -707,20 +735,23 @@ func (m Model) renderContent() string {
 	s += leftPad + lipgloss.JoinHorizontal(lipgloss.Left, timersStopwatchesTab, ambienceTab, skyfieldTab, prefsTab) + "\n"
 
 	// Content
+	var contentStr string
 	if m.err != nil {
-		s += leftPad + fmt.Sprintf("Error: %v\n", m.err)
+		contentStr = fmt.Sprintf("Error: %v\n", m.err)
 	} else {
 		switch m.activeTab {
 		case 0:
-			s += leftPad + strings.ReplaceAll(m.renderTimersStopwatches(), "\n", "\n"+leftPad)
+			contentStr = m.renderTimersStopwatches()
 		case 1:
-			s += leftPad + strings.ReplaceAll(m.renderAmbience(), "\n", "\n"+leftPad)
+			contentStr = m.renderAmbience()
 		case 2:
-			s += leftPad + strings.ReplaceAll(m.renderSkyfield(), "\n", "\n"+leftPad)
+			contentStr = m.renderSkyfield()
 		case 3:
-			s += leftPad + strings.ReplaceAll(m.renderPrefs(), "\n", "\n"+leftPad)
+			contentStr = m.renderPrefs()
 		}
 	}
+
+	s += leftPad + strings.ReplaceAll(contentStr, "\n", "\n"+leftPad)
 
 	// Status line - simplified since mode/location/names moved to skyfield tab
 	statusLine := lipgloss.NewStyle().Foreground(overlay0).Render(
