@@ -56,6 +56,7 @@ type Model struct {
 
 	// Preferences
 	userConfig          *config.UserConfig
+	settingsRepo        config.SettingsRepository
 	configDir           string
 	chimesDir           string
 	ambienceDir         string
@@ -112,7 +113,7 @@ type testStoppedMsg struct {
 }
 
 // New creates a new TUI model
-func New(port int, citiesRepo *repository.CitiesRepository) Model {
+func New(port int, citiesRepo *repository.CitiesRepository, settingsRepo config.SettingsRepository) Model {
 	// Get default city (Mumbai)
 	var defaultCity *repository.City
 	if citiesRepo != nil {
@@ -131,12 +132,12 @@ func New(port int, citiesRepo *repository.CitiesRepository) Model {
 		observer = starfield.MumbaiObserver()
 	}
 
-	// Load user config
+	// Load user config from database
 	homeDir, _ := os.UserHomeDir()
 	configDir := filepath.Join(homeDir, config.DefaultDataDir)
 	chimesDir := filepath.Join(homeDir, config.DefaultChimesDir)
 	ambienceDir := filepath.Join(homeDir, config.DefaultAmbienceDir)
-	userConfig := config.LoadUserConfig(configDir)
+	userConfig := config.LoadUserConfig(settingsRepo)
 
 	// Load available sound files
 	availableSounds := loadAvailableSoundFiles(chimesDir)
@@ -155,7 +156,7 @@ func New(port int, citiesRepo *repository.CitiesRepository) Model {
 			})
 		}
 		// Save the initialized config
-		_ = userConfig.Save(configDir)
+		_ = userConfig.Save(settingsRepo)
 	}
 
 	// Initialize display order (sorted by filename)
@@ -171,6 +172,7 @@ func New(port int, citiesRepo *repository.CitiesRepository) Model {
 		citiesRepo:             citiesRepo,
 		currentCity:            defaultCity,
 		userConfig:             userConfig,
+		settingsRepo:           settingsRepo,
 		configDir:              configDir,
 		chimesDir:              chimesDir,
 		ambienceDir:            ambienceDir,
