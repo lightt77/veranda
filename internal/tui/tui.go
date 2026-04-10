@@ -894,6 +894,262 @@ func (m Model) renderStopwatches() string {
 	return content
 }
 
+// renderTimersStopwatches renders the combined timer and stopwatch list
+// Shows max 3 rows per section with scrolling, supports 1 or 2 column layout
+func (m Model) renderTimersStopwatches() string {
+	var content string
+
+	// Header with toggle status
+	content += "Timers/Stopwatches\n\n"
+
+	// Show toggle status line
+	timersStatus := "off"
+	if m.showTimers {
+		timersStatus = "on"
+	}
+	stopwatchesStatus := "off"
+	if m.showStopwatches {
+		stopwatchesStatus = "on"
+	}
+	completedStatus := "hidden"
+	if m.showCompleted {
+		completedStatus = "shown"
+	}
+
+	content += lipgloss.NewStyle().Foreground(overlay0).Render(
+		fmt.Sprintf("[t]timers:%s [s]stopwatches:%s [h]completed:%s",
+			lipgloss.NewStyle().Foreground(mauve).Render(timersStatus),
+			lipgloss.NewStyle().Foreground(mauve).Render(stopwatchesStatus),
+			lipgloss.NewStyle().Foreground(mauve).Render(completedStatus))) + "\n\n"
+
+	// Handle different view modes
+	if !m.showTimers && !m.showStopwatches {
+		return content + lipgloss.NewStyle().Foreground(overlay0).Render("Press 't' to show timers or 's' to show stopwatches") + "\n"
+	}
+
+	// Get visible items
+	visibleTimers := m.getVisibleTimers()
+	visibleStopwatches := m.getVisibleStopwatches()
+
+	// Single column layout (only one section visible)
+	if (m.showTimers && !m.showStopwatches) || (!m.showTimers && m.showStopwatches) {
+		if m.showTimers {
+			content += m.renderTimersSection(visibleTimers, true)
+		} else {
+			content += m.renderStopwatchesSection(visibleStopwatches, true)
+		}
+		return content
+	}
+
+	// Two column layout (both visible)
+	// Render side by side
+	timersContent := m.renderTimersSection(visibleTimers, false)
+	stopwatchesContent := m.renderStopwatchesSection(visibleStopwatches, false)
+
+	// Split into lines and combine side by side
+	timersLines := strings.Split(timersContent, "\n")
+	stopwatchLines := strings.Split(stopwatchesContent, "\n")
+
+	maxLines := max(len(timersLines), len(stopwatchLines))
+	for i := 0; i < maxLines; i++ {
+		timerLine := ""
+		if i < len(timersLines) {
+			timerLine = timersLines[i]
+		}
+		stopwatchLine := ""
+		if i < len(stopwatchLines) {
+			stopwatchLine = stopwatchLines[i]
+		}
+
+		// Pad timer line to consistent width (40 chars)
+		padding := 40 - len(timerLine)
+		if padding < 0 {
+			padding = 0
+		}
+
+		content += timerLine + strings.Repeat(" ", padding) + stopwatchLine + "\n"
+	}
+
+	return content
+}
+
+// getVisibleTimers returns filtered timers based on showCompleted setting
+func (m Model) getVisibleTimers() []map[string]interface{} {
+	var visible []map[string]interface{}
+	for _, t := range m.timers {
+		status := t["status"].(string)
+		if status == "completed" && !m.showCompleted {
+			continue
+		}
+		visible = append(visible, t)
+	}
+	return visible
+}
+
+// getVisibleStopwatches returns all non-deleted stopwatches
+func (m Model) getVisibleStopwatches() []map[string]interface{} {
+	return m.stopwatches
+}
+
+// renderTimersSection renders the timers section (max 3 visible rows with scrolling)
+func (m Model) renderTimersSection(timers []map[string]interface{}, fullWidth bool) string {
+	var content string
+
+	// Header
+	content += lipgloss.NewStyle().Foreground(mauve).Bold(true).Render("Timers") + "\n"
+
+	if len(timers) == 0 {
+		content += lipgloss.NewStyle().Foreground(overlay0).Render("  No timers. Use /t to create") + "\n"
+		return content
+	}
+
+	// Calculate scroll window (max 3 rows visible)
+	const maxVisible = 3
+	totalTimers := len(timers)
+	startIdx := m.timerScrollOffset
+	if startIdx > totalTimers-maxVisible {
+		startIdx = max(0, totalTimers-maxVisible)
+	}
+	endIdx := min(startIdx+maxVisible, totalTimers)
+
+	// Show scroll indicator if needed
+	if startIdx > 0 {
+		content += lipgloss.NewStyle().Foreground(overlay0).Render("  ↑ more") + "\n"
+	}
+
+	// Render visible timers
+	for i := startIdx; i < endIdx; i++ {
+		t := timers[i]
+		label := t["label"].(string)
+		status := t["status"].(string)
+
+		// Selection indicator (only if this column is active)
+		selected := "  "
+		if m.activeColumn == 0 && i == m.timerSelectedIdx {
+			selected = selectedStyle.Render("> ")
+		}
+
+		statusIcon := "○"
+		statusStyle := inactiveTabStyle
+
+		switch status {
+		case "running":
+			statusIcon = "▶"
+			statusStyle = runningStyle
+		case "paused":
+			statusIcon = "⏸"
+			statusStyle = pausedStyle
+		case "completed":
+			statusIcon = "✓"
+			statusStyle = completedStyle
+		}
+
+		// Get time info
+		var remainingMs int64
+		if curr, ok := t["current_remaining_ms"]; ok {
+			remainingMs = int64(curr.(float64))
+		} else {
+			remainingMs = int64(t["remaining_ms"].(float64))
+		}
+
+		remainingTime := formatDuration(remainingMs)
+
+		content += fmt.Sprintf("%s%s %s %s\n",
+			selected,
+			statusStyle.Render(statusIcon),
+			label,
+			remainingStyle.Render(remainingTime),
+		)
+	}
+
+	// Show scroll indicator if more below
+	if endIdx < totalTimers {
+		content += lipgloss.NewStyle().Foreground(overlay0).Render("  ↓ more") + "\n"
+	}
+
+	return content
+}
+
+// renderStopwatchesSection renders the stopwatches section (max 3 visible rows with scrolling)
+func (m Model) renderStopwatchesSection(stopwatches []map[string]interface{}, fullWidth bool) string {
+	var content string
+
+	// Header
+	content += lipgloss.NewStyle().Foreground(mauve).Bold(true).Render("Stopwatches") + "\n"
+
+	if len(stopwatches) == 0 {
+		content += lipgloss.NewStyle().Foreground(overlay0).Render("  No stopwatches. Use /s to create") + "\n"
+		return content
+	}
+
+	// Calculate scroll window (max 3 rows visible)
+	const maxVisible = 3
+	totalStopwatches := len(stopwatches)
+	startIdx := m.stopwatchScrollOffset
+	if startIdx > totalStopwatches-maxVisible {
+		startIdx = max(0, totalStopwatches-maxVisible)
+	}
+	endIdx := min(startIdx+maxVisible, totalStopwatches)
+
+	// Show scroll indicator if needed
+	if startIdx > 0 {
+		content += lipgloss.NewStyle().Foreground(overlay0).Render("  ↑ more") + "\n"
+	}
+
+	now := time.Now()
+
+	// Render visible stopwatches
+	for i := startIdx; i < endIdx; i++ {
+		sw := stopwatches[i]
+		label := sw["label"].(string)
+		status := sw["status"].(string)
+
+		// Selection indicator (only if this column is active)
+		selected := "  "
+		if m.activeColumn == 1 && i == m.stopwatchSelectedIdx {
+			selected = selectedStyle.Render("> ")
+		}
+
+		statusIcon := "○"
+		statusStyle := inactiveTabStyle
+
+		if status == "running" {
+			statusIcon = "▶"
+			statusStyle = runningStyle
+		}
+
+		// Get elapsed time
+		var elapsedMs int64
+		if status == "running" {
+			if startedAt, ok := sw["started_at_ms"]; ok && startedAt != nil {
+				startedAtMs := int64(startedAt.(float64))
+				baseElapsed := int64(sw["elapsed_ms"].(float64))
+				elapsedMs = baseElapsed + now.UnixMilli() - startedAtMs
+			} else {
+				elapsedMs = int64(sw["elapsed_ms"].(float64))
+			}
+		} else {
+			elapsedMs = int64(sw["elapsed_ms"].(float64))
+		}
+
+		elapsedStr := formatStopwatch(elapsedMs)
+
+		content += fmt.Sprintf("%s%s %s %s\n",
+			selected,
+			statusStyle.Render(statusIcon),
+			label,
+			elapsedStr,
+		)
+	}
+
+	// Show scroll indicator if more below
+	if endIdx < totalStopwatches {
+		content += lipgloss.NewStyle().Foreground(overlay0).Render("  ↓ more") + "\n"
+	}
+
+	return content
+}
+
 // renderPrefs renders the preferences/settings page
 func (m Model) renderPrefs() string {
 	var content string
@@ -972,12 +1228,6 @@ func (m Model) renderPrefs() string {
 	}
 
 	return content
-}
-
-// renderTimersStopwatches renders the combined timer and stopwatch list
-func (m Model) renderTimersStopwatches() string {
-	// For now, just render timers (will be implemented in Phase 3)
-	return m.renderTimers()
 }
 
 // renderSkyfield renders the skyfield settings tab
