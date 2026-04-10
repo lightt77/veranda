@@ -62,9 +62,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleCityPickerKey(msg.String())
 		}
 
-		// Handle ambient volume editing mode
-		if m.activeTab == 2 && m.editingAmbientVolume {
-			newM, cmd, handled := m.handleAmbientKey(msg.String())
+		// Handle ambience volume editing mode
+		if m.activeTab == 1 && m.editingAmbienceVolume {
+			newM, cmd, handled := m.handleAmbienceKey(msg.String())
 			if handled {
 				return newM, cmd
 			}
@@ -98,40 +98,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			// Stop any test playback before quitting
 			return m, tea.Batch(m.stopAllTestPlayback(), tea.Quit)
-		case "tab", "right":
-			// Stop test playback when leaving ambient tab
-			if m.activeTab == 2 {
+		case "tab":
+			// Stop test playback when leaving ambience tab
+			if m.activeTab == 1 {
 				m.stopAllTestPlaybackSync()
 			}
 			m.activeTab = (m.activeTab + 1) % 4
 			m.selectedIdx = 0
 			m.selectingSoundFile = false
-			m.editingAmbientVolume = false
+			m.editingAmbienceVolume = false
 			m.editingChimeVolume = false
-		case "shift+tab", "left":
-			// Stop test playback when leaving ambient tab
-			if m.activeTab == 2 {
-				m.stopAllTestPlaybackSync()
-			}
-			m.activeTab = (m.activeTab - 1 + 4) % 4
-			m.selectedIdx = 0
-			m.selectingSoundFile = false
-			m.editingAmbientVolume = false
 			m.editingChimeVolume = false
 		case "up", "k":
-			if m.activeTab == 2 {
-				newM, _, _ := m.handleAmbientKey(msg.String())
+			if m.activeTab == 1 {
+				newM, _, _ := m.handleAmbienceKey(msg.String())
 				return newM, nil
 			} else {
 				m.selectedIdx = max(0, m.selectedIdx-1)
 			}
 		case "down", "j":
-			if m.activeTab == 2 {
-				newM, _, _ := m.handleAmbientKey(msg.String())
+			if m.activeTab == 1 {
+				newM, _, _ := m.handleAmbienceKey(msg.String())
 				return newM, nil
 			} else {
 				maxIdx := len(m.timers) - 1
-				if m.activeTab == 1 {
+				if m.activeTab == 0 {
 					maxIdx = len(m.stopwatches) - 1
 				}
 				m.selectedIdx = min(maxIdx, m.selectedIdx+1)
@@ -140,24 +131,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Pause/resume selected timer or stopwatch
 			if m.activeTab == 0 && m.selectedIdx < len(m.timers) {
 				return m, toggleTimerCmd(m.client, m.timers, m.selectedIdx, m.showCompleted)
-			} else if m.activeTab == 1 && m.selectedIdx < len(m.stopwatches) {
+			} else if m.activeTab == 0 && m.selectedIdx < len(m.stopwatches) {
 				return m, toggleStopwatchCmd(m.client, m.stopwatches, m.selectedIdx)
-			} else if m.activeTab == 2 {
-				// Toggle ambient enabled
-				newM, _, _ := m.handleAmbientKey(" ")
+			} else if m.activeTab == 1 {
+				// Toggle ambience enabled
+				newM, _, _ := m.handleAmbienceKey(" ")
 				return newM, nil
 			}
 		case "d":
 			// Delete selected timer or stopwatch
 			if m.activeTab == 0 && m.selectedIdx < len(m.timers) {
 				return m, deleteTimerCmd(m.client, m.timers, m.selectedIdx, m.showCompleted)
-			} else if m.activeTab == 1 && m.selectedIdx < len(m.stopwatches) {
+			} else if m.activeTab == 0 && m.selectedIdx < len(m.stopwatches) {
 				return m, deleteStopwatchCmd(m.client, m.stopwatches, m.selectedIdx)
 			}
 		case "r":
-			if m.activeTab == 2 {
-				// Reset ambient sounds to defaults
-				newM, _, _ := m.handleAmbientKey("r")
+			if m.activeTab == 1 {
+				// Reset ambience sounds to defaults
+				newM, _, _ := m.handleAmbienceKey("r")
 				return newM, nil
 			} else {
 				return m, refreshCmd(m.client)
@@ -172,25 +163,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.activeTab == 0 {
 				// Quick timer creation
 				return m, createTimerCmd(m.client)
-			} else if m.activeTab == 2 {
-				// Test toggle for ambient sound - use async command
+			} else if m.activeTab == 1 {
+				// Test toggle for ambience sound - use async command
 				if err := m.initTestAudioPlayer(); err != nil {
 					m.setSettingsMessage(fmt.Sprintf("Audio error: %v", err))
 					return m, nil
 				}
-				newM, cmd, _ := m.handleAmbientKey("t")
+				newM, cmd, _ := m.handleAmbienceKey("t")
 				return newM, cmd
 			}
 		case "a":
-			if m.activeTab == 2 {
-				// Toggle global ambient on/off
-				newM, _, _ := m.handleAmbientKey("a")
-				return newM, nil
-			}
-		case "s":
 			if m.activeTab == 1 {
-				// Quick stopwatch creation
-				return m, createStopwatchCmd(m.client)
+				// Toggle global ambience on/off
+				newM, _, _ := m.handleAmbienceKey("a")
+				return newM, nil
 			}
 		case "m":
 			// Toggle starfield mode
@@ -225,8 +211,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "v":
 			// Volume editing
-			if m.activeTab == 2 {
-				newM, _, _ := m.handleAmbientKey("v")
+			if m.activeTab == 1 {
+				newM, _, _ := m.handleAmbienceKey("v")
 				return newM, nil
 			} else if m.activeTab == 3 {
 				m.editingChimeVolume = true
@@ -616,24 +602,24 @@ func (m Model) renderContent() string {
 	// Title
 	s += leftPad + titleStyle.Render("⏱️  Veranda") + "\n"
 
-	// Tabs - now 4 tabs
-	timersTab := inactiveTabStyle.Render("Timers [t]")
-	stopwatchesTab := inactiveTabStyle.Render("Stopwatches [s]")
-	ambientTab := inactiveTabStyle.Render("Ambient [a]")
-	prefsTab := inactiveTabStyle.Render("Prefs [e]")
+	// Tabs - now 4 tabs: timers/stopwatches, ambience, skyfield, prefs
+	timersStopwatchesTab := inactiveTabStyle.Render("Timers/Stopwatches")
+	ambienceTab := inactiveTabStyle.Render("Ambience")
+	skyfieldTab := inactiveTabStyle.Render("Skyfield")
+	prefsTab := inactiveTabStyle.Render("Prefs")
 
 	switch m.activeTab {
 	case 0:
-		timersTab = activeTabStyle.Render("Timers [t]")
+		timersStopwatchesTab = activeTabStyle.Render("Timers/Stopwatches")
 	case 1:
-		stopwatchesTab = activeTabStyle.Render("Stopwatches [s]")
+		ambienceTab = activeTabStyle.Render("Ambience")
 	case 2:
-		ambientTab = activeTabStyle.Render("Ambient [a]")
+		skyfieldTab = activeTabStyle.Render("Skyfield")
 	case 3:
-		prefsTab = activeTabStyle.Render("Prefs [e]")
+		prefsTab = activeTabStyle.Render("Prefs")
 	}
 
-	s += leftPad + lipgloss.JoinHorizontal(lipgloss.Left, timersTab, stopwatchesTab, ambientTab, prefsTab) + "\n"
+	s += leftPad + lipgloss.JoinHorizontal(lipgloss.Left, timersStopwatchesTab, ambienceTab, skyfieldTab, prefsTab) + "\n"
 
 	// Content
 	if m.err != nil {
@@ -641,13 +627,13 @@ func (m Model) renderContent() string {
 	} else {
 		switch m.activeTab {
 		case 0:
-			s += leftPad + strings.ReplaceAll(m.renderTimers(), "\n", "\n"+leftPad)
+			s += leftPad + strings.ReplaceAll(m.renderTimersStopwatches(), "\n", "\n"+leftPad)
 		case 1:
-			s += leftPad + strings.ReplaceAll(m.renderStopwatches(), "\n", "\n"+leftPad)
+			s += leftPad + strings.ReplaceAll(m.renderAmbience(), "\n", "\n"+leftPad)
 		case 2:
-			s += leftPad + strings.ReplaceAll(m.renderAmbientSounds(), "\n", "\n"+leftPad)
+			s += leftPad + strings.ReplaceAll(m.renderSkyfield(), "\n", "\n"+leftPad)
 		case 3:
-			s += leftPad + strings.ReplaceAll(m.renderPreferences(), "\n", "\n"+leftPad)
+			s += leftPad + strings.ReplaceAll(m.renderPrefs(), "\n", "\n"+leftPad)
 		}
 	}
 
@@ -677,9 +663,9 @@ func (m Model) renderContent() string {
 	// Help - different based on active tab
 	var helpText string
 	switch m.activeTab {
-	case 2:
-		// Ambient Sounds tab
-		if m.editingAmbientVolume {
+	case 1:
+		// Ambience tab
+		if m.editingAmbienceVolume {
 			helpText = lipgloss.NewStyle().Foreground(mauve).Render("0-9") +
 				lipgloss.NewStyle().Foreground(overlay0).Render("/↑↓:volume ") +
 				lipgloss.NewStyle().Foreground(mauve).Render("enter/esc") +
@@ -693,8 +679,6 @@ func (m Model) renderContent() string {
 				lipgloss.NewStyle().Foreground(overlay0).Render(":test ") +
 				lipgloss.NewStyle().Foreground(mauve).Render("v") +
 				lipgloss.NewStyle().Foreground(overlay0).Render(":vol ") +
-				lipgloss.NewStyle().Foreground(mauve).Render("s") +
-				lipgloss.NewStyle().Foreground(overlay0).Render(":save ") +
 				lipgloss.NewStyle().Foreground(mauve).Render("r") +
 				lipgloss.NewStyle().Foreground(overlay0).Render(":reset")
 		}
@@ -909,8 +893,8 @@ func (m Model) renderStopwatches() string {
 	return content
 }
 
-// renderPreferences renders the preferences/settings page
-func (m Model) renderPreferences() string {
+// renderPrefs renders the preferences/settings page
+func (m Model) renderPrefs() string {
 	var content string
 
 	// Title
@@ -985,6 +969,46 @@ func (m Model) renderPreferences() string {
 	if m.settingsMessage != "" {
 		content += "\n" + lipgloss.NewStyle().Foreground(green).Render(m.settingsMessage) + "\n"
 	}
+
+	return content
+}
+
+// renderTimersStopwatches renders the combined timer and stopwatch list
+func (m Model) renderTimersStopwatches() string {
+	// For now, just render timers (will be implemented in Phase 3)
+	return m.renderTimers()
+}
+
+// renderSkyfield renders the skyfield settings tab
+func (m Model) renderSkyfield() string {
+	var content string
+
+	// Title
+	content += "Skyfield\n\n"
+
+	// Mode setting
+	modeText := m.userConfig.SkyfieldMode
+	if modeText == "" {
+		modeText = "random"
+	}
+	content += fmt.Sprintf("Mode:      %s\n", modeText)
+
+	// Names setting
+	namesText := "off"
+	if m.userConfig.SkyfieldShowNames {
+		namesText = "on"
+	}
+	content += fmt.Sprintf("Names:     %s\n", namesText)
+
+	// Location
+	locationText := "Mumbai"
+	if m.currentCity != nil {
+		locationText = m.currentCity.City
+	}
+	content += fmt.Sprintf("Location:  %s\n", locationText)
+
+	content += "\n" + lipgloss.NewStyle().Foreground(overlay0).Render(
+		"[←/→]:toggle mode [space]:toggle names [l]:change location") + "\n"
 
 	return content
 }
