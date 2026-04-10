@@ -26,11 +26,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
-		// Resize both starfields to fill area above content
-		// Keep content area fixed at 14 lines + 2 padding to prevent rendering artifacts
-		contentHeight := 14
-		paddingBottom := 2
-		starAreaHeight := m.height - contentHeight - paddingBottom
+		// Resize both starfields to fill area above fixed content area
+		starAreaHeight := m.height - ContentAreaHeight
 		if starAreaHeight < 8 {
 			starAreaHeight = 8
 		}
@@ -132,6 +129,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.selectingSoundFile = false
 			m.editingAmbienceVolume = false
 			m.editingChimeVolume = false
+			m.contentScrollOffset = 0 // Reset scroll position on tab switch
 		case "up", "k":
 			if m.activeTab == 1 {
 				newM, _, _ := m.handleAmbienceKey(msg.String())
@@ -223,6 +221,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				return m, refreshCmd(m.client)
 			}
+		case "pgup":
+			// Page up - scroll content viewport
+			m.scrollContentViewport(-ContentAreaHeight)
+			return m, nil
+		case "pgdown":
+			// Page down - scroll content viewport
+			m.scrollContentViewport(ContentAreaHeight)
+			return m, nil
 		case "h":
 			// Toggle showing completed/archived items
 			if m.activeTab == 0 {
@@ -1730,6 +1736,44 @@ func (m Model) renderSkyfield() string {
 		"↑↓:select [←/→]:toggle mode [space]:toggle names [l]:change location") + "\n"
 
 	return content
+}
+
+// scrollContentViewport scrolls the content viewport by the given delta
+// Positive delta scrolls down, negative delta scrolls up
+func (m *Model) scrollContentViewport(delta int) {
+	m.contentScrollOffset += delta
+
+	// Ensure scroll offset stays within valid bounds
+	maxOffset := m.getMaxContentScrollOffset()
+	if m.contentScrollOffset < 0 {
+		m.contentScrollOffset = 0
+	}
+	if m.contentScrollOffset > maxOffset {
+		m.contentScrollOffset = maxOffset
+	}
+}
+
+// getMaxContentScrollOffset returns the maximum valid scroll offset for current tab
+func (m Model) getMaxContentScrollOffset() int {
+	var content string
+	switch m.activeTab {
+	case 0:
+		content = m.renderTimersStopwatches()
+	case 1:
+		content = m.renderAmbience()
+	case 2:
+		content = m.renderSkyfield()
+	case 3:
+		content = m.renderPrefs()
+	}
+
+	lines := strings.Split(content, "\n")
+	totalLines := len(lines)
+
+	if totalLines <= ContentAreaHeight {
+		return 0
+	}
+	return totalLines - ContentAreaHeight
 }
 
 // Run starts the TUI
