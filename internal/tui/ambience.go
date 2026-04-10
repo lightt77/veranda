@@ -11,46 +11,46 @@ import (
 	"github.com/lightt77/veranda/internal/config"
 )
 
-// renderAmbientSounds renders the ambient sounds configuration tab
-func (m Model) renderAmbientSounds() string {
+// renderAmbience renders the ambience sounds configuration tab
+func (m Model) renderAmbience() string {
 	var content string
 
 	// Title
-	content += "Ambient Sounds\n\n"
+	content += "Ambience\n\n"
 
-	// Global ambient toggle
+	// Global ambience toggle
 	globalStatus := "OFF"
 	globalColor := red
-	if m.userConfig.AmbientEnabled {
+	if m.userConfig.AmbienceEnabled {
 		globalStatus = "ON"
 		globalColor = green
 	}
-	content += "Ambient sounds are " + lipgloss.NewStyle().Foreground(globalColor).Bold(true).Render(globalStatus)
+	content += "Ambience sounds are " + lipgloss.NewStyle().Foreground(globalColor).Bold(true).Render(globalStatus)
 	content += lipgloss.NewStyle().Foreground(overlay0).Render(" (press 'a' to toggle)\n")
 
-	if !m.userConfig.AmbientEnabled {
-		content += "\n" + lipgloss.NewStyle().Foreground(overlay0).Render("Ambient sounds are disabled. Press 'a' to enable.\n")
+	if !m.userConfig.AmbienceEnabled {
+		content += "\n" + lipgloss.NewStyle().Foreground(overlay0).Render("Ambience sounds are disabled. Press 'a' to enable.\n")
 		return content
 	}
 
-	if len(m.userConfig.AmbientSounds) == 0 {
-		content += "\n" + lipgloss.NewStyle().Foreground(red).Render("No ambient sound files found.\n")
+	if len(m.userConfig.AmbienceSounds) == 0 {
+		content += "\n" + lipgloss.NewStyle().Foreground(red).Render("No ambience sound files found.\n")
 		content += lipgloss.NewStyle().Foreground(overlay0).Render("Place .mp3 files in ~/.veranda/sounds/ambience/\n")
 		return content
 	}
 
 	content += "\n"
 
-	// Display list using ambientDisplayOrder for sorted display
-	for displayIdx, configIdx := range m.ambientDisplayOrder {
-		if configIdx < 0 || configIdx >= len(m.userConfig.AmbientSounds) {
+	// Display list using ambienceDisplayOrder for sorted display
+	for displayIdx, configIdx := range m.ambienceDisplayOrder {
+		if configIdx < 0 || configIdx >= len(m.userConfig.AmbienceSounds) {
 			continue
 		}
-		sound := m.userConfig.AmbientSounds[configIdx]
+		sound := m.userConfig.AmbienceSounds[configIdx]
 
 		// Selection indicator
 		prefix := "  "
-		if displayIdx == m.ambientSelectedIdx {
+		if displayIdx == m.ambienceSelectedIdx {
 			prefix = selectedStyle.Render("> ")
 		}
 
@@ -62,7 +62,7 @@ func (m Model) renderAmbientSounds() string {
 
 		// Filename
 		filename := sound.Filename
-		if displayIdx == m.ambientSelectedIdx {
+		if displayIdx == m.ambienceSelectedIdx {
 			filename = lipgloss.NewStyle().Foreground(lavender).Bold(true).Render(filename)
 		} else {
 			filename = lipgloss.NewStyle().Foreground(text).Render(filename)
@@ -72,7 +72,7 @@ func (m Model) renderAmbientSounds() string {
 		volBar := renderVolumeBar(sound.Volume, 10)
 		volPercent := int(sound.Volume * 100)
 		volStr := fmt.Sprintf("%3d%%", volPercent)
-		if displayIdx == m.ambientSelectedIdx && m.editingAmbientVolume {
+		if displayIdx == m.ambienceSelectedIdx && m.editingAmbienceVolume {
 			volStr = lipgloss.NewStyle().Foreground(yellow).Render(volStr)
 		}
 
@@ -94,7 +94,7 @@ func (m Model) renderAmbientSounds() string {
 
 	// Instructions
 	content += "\n" + lipgloss.NewStyle().Foreground(overlay0).Render(
-		"a:ambient on/off • space:toggle sound • t:test • v:volume • r:reset") + "\n"
+		"a:ambience on/off • space:toggle sound • t:test • v:volume • r:reset") + "\n"
 
 	// Show settings message if any
 	if m.settingsMessage != "" {
@@ -104,25 +104,25 @@ func (m Model) renderAmbientSounds() string {
 	return content
 }
 
-// handleAmbientKey handles key presses in the ambient sounds tab
+// handleAmbienceKey handles key presses in the ambience tab
 // Returns (newModel, cmd, handled) where handled indicates if the key was processed
-func (m Model) handleAmbientKey(key string) (Model, tea.Cmd, bool) {
+func (m Model) handleAmbienceKey(key string) (Model, tea.Cmd, bool) {
 	// Handle volume editing mode first
-	if m.editingAmbientVolume {
+	if m.editingAmbienceVolume {
 		switch key {
 		case "esc", "enter":
-			m.editingAmbientVolume = false
+			m.editingAmbienceVolume = false
 			return m, nil, true
 		case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9":
 			// Set volume to key value * 10%
 			vol := float64(key[0]-'0') / 10.0
-			m.setAmbientVolume(vol)
+			m.setAmbienceVolume(vol)
 			return m, nil, true
 		case "up", "k":
-			m.adjustAmbientVolume(0.1)
+			m.adjustAmbienceVolume(0.1)
 			return m, nil, true
 		case "down", "j":
-			m.adjustAmbientVolume(-0.1)
+			m.adjustAmbienceVolume(-0.1)
 			return m, nil, true
 		}
 		return m, nil, true // Consume all keys in volume editing mode
@@ -130,41 +130,41 @@ func (m Model) handleAmbientKey(key string) (Model, tea.Cmd, bool) {
 
 	switch key {
 	case "up", "k":
-		if m.ambientSelectedIdx > 0 {
-			m.ambientSelectedIdx--
+		if m.ambienceSelectedIdx > 0 {
+			m.ambienceSelectedIdx--
 		}
 		return m, nil, true
 	case "down", "j":
-		maxIdx := len(m.ambientDisplayOrder) - 1
-		if m.ambientSelectedIdx < maxIdx {
-			m.ambientSelectedIdx++
+		maxIdx := len(m.ambienceDisplayOrder) - 1
+		if m.ambienceSelectedIdx < maxIdx {
+			m.ambienceSelectedIdx++
 		}
 		return m, nil, true
 	case "a":
-		// Toggle global ambient on/off
-		m.toggleAmbientGlobal()
+		// Toggle global ambience on/off
+		m.toggleAmbienceGlobal()
 		return m, nil, true
 	case " ":
-		// Toggle enable/disable (only if ambient is enabled)
-		if m.userConfig.AmbientEnabled {
-			m.toggleAmbientEnabled()
+		// Toggle enable/disable (only if ambience is enabled)
+		if m.userConfig.AmbienceEnabled {
+			m.toggleAmbienceEnabled()
 		}
 		return m, nil, true
 	case "t":
-		// Test toggle - use async command (only if ambient is enabled)
-		if m.userConfig.AmbientEnabled && m.ambientSelectedIdx < len(m.ambientDisplayOrder) {
-			return m, toggleAmbientTestCmd(m.testAudioPlayer, m.userConfig.AmbientSounds, m.ambientDisplayOrder, m.ambientSelectedIdx), true
+		// Test toggle - use async command (only if ambience is enabled)
+		if m.userConfig.AmbienceEnabled && m.ambienceSelectedIdx < len(m.ambienceDisplayOrder) {
+			return m, toggleAmbienceTestCmd(m.testAudioPlayer, m.userConfig.AmbienceSounds, m.ambienceDisplayOrder, m.ambienceSelectedIdx), true
 		}
 		return m, nil, true
 	case "v":
-		// Enter volume editing mode (only if ambient is enabled)
-		if m.userConfig.AmbientEnabled && m.ambientSelectedIdx < len(m.ambientDisplayOrder) {
-			m.editingAmbientVolume = true
+		// Enter volume editing mode (only if ambience is enabled)
+		if m.userConfig.AmbienceEnabled && m.ambienceSelectedIdx < len(m.ambienceDisplayOrder) {
+			m.editingAmbienceVolume = true
 		}
 		return m, nil, true
 	case "r":
 		// Reset to defaults
-		m.resetAmbientSounds()
+		m.resetAmbience()
 		return m, nil, true
 	}
 
@@ -184,91 +184,91 @@ func (m Model) handleTestMessages(msg tea.Msg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// setAmbientVolume sets the volume for the currently selected ambient sound
-func (m *Model) setAmbientVolume(vol float64) {
+// setAmbienceVolume sets the volume for the currently selected ambience sound
+func (m *Model) setAmbienceVolume(vol float64) {
 	if vol < 0 {
 		vol = 0
 	}
 	if vol > 1 {
 		vol = 1
 	}
-	if m.ambientSelectedIdx < len(m.ambientDisplayOrder) {
-		configIdx := m.ambientDisplayOrder[m.ambientSelectedIdx]
-		if configIdx >= 0 && configIdx < len(m.userConfig.AmbientSounds) {
-			m.userConfig.AmbientSounds[configIdx].Volume = vol
+	if m.ambienceSelectedIdx < len(m.ambienceDisplayOrder) {
+		configIdx := m.ambienceDisplayOrder[m.ambienceSelectedIdx]
+		if configIdx >= 0 && configIdx < len(m.userConfig.AmbienceSounds) {
+			m.userConfig.AmbienceSounds[configIdx].Volume = vol
 			// Update playing stream volume in real-time
 			if m.testAudioPlayer != nil {
-				m.testAudioPlayer.SetTestVolume(m.userConfig.AmbientSounds[configIdx].Filename, vol)
+				m.testAudioPlayer.SetTestVolume(m.userConfig.AmbienceSounds[configIdx].Filename, vol)
 			}
 			// Auto-save the volume change
-			m.saveAmbientSettings()
+			m.saveAmbienceSettings()
 		}
 	}
 }
 
-// adjustAmbientVolume adjusts the volume by the given delta
-func (m *Model) adjustAmbientVolume(delta float64) {
-	if m.ambientSelectedIdx < len(m.ambientDisplayOrder) {
-		configIdx := m.ambientDisplayOrder[m.ambientSelectedIdx]
-		if configIdx >= 0 && configIdx < len(m.userConfig.AmbientSounds) {
-			newVol := m.userConfig.AmbientSounds[configIdx].Volume + delta
+// adjustAmbienceVolume adjusts the volume by the given delta
+func (m *Model) adjustAmbienceVolume(delta float64) {
+	if m.ambienceSelectedIdx < len(m.ambienceDisplayOrder) {
+		configIdx := m.ambienceDisplayOrder[m.ambienceSelectedIdx]
+		if configIdx >= 0 && configIdx < len(m.userConfig.AmbienceSounds) {
+			newVol := m.userConfig.AmbienceSounds[configIdx].Volume + delta
 			if newVol < 0 {
 				newVol = 0
 			}
 			if newVol > 1 {
 				newVol = 1
 			}
-			m.userConfig.AmbientSounds[configIdx].Volume = newVol
+			m.userConfig.AmbienceSounds[configIdx].Volume = newVol
 			// Update playing stream volume in real-time
 			if m.testAudioPlayer != nil {
-				m.testAudioPlayer.SetTestVolume(m.userConfig.AmbientSounds[configIdx].Filename, newVol)
+				m.testAudioPlayer.SetTestVolume(m.userConfig.AmbienceSounds[configIdx].Filename, newVol)
 			}
 			// Auto-save the volume change
-			m.saveAmbientSettings()
+			m.saveAmbienceSettings()
 		}
 	}
 }
 
-// toggleAmbientGlobal toggles the global ambient sounds on/off
-func (m *Model) toggleAmbientGlobal() {
-	m.userConfig.AmbientEnabled = !m.userConfig.AmbientEnabled
+// toggleAmbienceGlobal toggles the global ambience sounds on/off
+func (m *Model) toggleAmbienceGlobal() {
+	m.userConfig.AmbienceEnabled = !m.userConfig.AmbienceEnabled
 	// Auto-save the change
-	m.saveAmbientSettings()
+	m.saveAmbienceSettings()
 	// Stop test playback if disabling
-	if !m.userConfig.AmbientEnabled {
+	if !m.userConfig.AmbienceEnabled {
 		m.stopAllTestPlaybackSync()
 	}
 }
 
-// toggleAmbientEnabled toggles the enabled state of the currently selected ambient sound
-func (m *Model) toggleAmbientEnabled() {
-	if m.ambientSelectedIdx < len(m.ambientDisplayOrder) {
-		configIdx := m.ambientDisplayOrder[m.ambientSelectedIdx]
-		if configIdx >= 0 && configIdx < len(m.userConfig.AmbientSounds) {
-			m.userConfig.AmbientSounds[configIdx].Enabled = !m.userConfig.AmbientSounds[configIdx].Enabled
+// toggleAmbienceEnabled toggles the enabled state of the currently selected ambience sound
+func (m *Model) toggleAmbienceEnabled() {
+	if m.ambienceSelectedIdx < len(m.ambienceDisplayOrder) {
+		configIdx := m.ambienceDisplayOrder[m.ambienceSelectedIdx]
+		if configIdx >= 0 && configIdx < len(m.userConfig.AmbienceSounds) {
+			m.userConfig.AmbienceSounds[configIdx].Enabled = !m.userConfig.AmbienceSounds[configIdx].Enabled
 			// Auto-save the change immediately
-			m.saveAmbientSettings()
+			m.saveAmbienceSettings()
 		}
 	}
 }
 
-// saveAmbientSettings saves the ambient sound configuration
-func (m *Model) saveAmbientSettings() {
+// saveAmbienceSettings saves the ambience sound configuration
+func (m *Model) saveAmbienceSettings() {
 	if err := m.userConfig.Save(m.configDir); err != nil {
 		m.setSettingsMessage(fmt.Sprintf("Error saving: %v", err))
 	} else {
-		m.setSettingsMessage("Ambient settings saved!")
+		m.setSettingsMessage("Ambience settings saved!")
 	}
 }
 
-// resetAmbientSounds resets ambient sounds to default (first enabled)
-func (m *Model) resetAmbientSounds() {
+// resetAmbience resets ambience sounds to default (first enabled)
+func (m *Model) resetAmbience() {
 	// Reset to default: only first one enabled at 100%
-	for i := range m.userConfig.AmbientSounds {
-		m.userConfig.AmbientSounds[i].Enabled = i == 0
-		m.userConfig.AmbientSounds[i].Volume = config.DefaultAmbientVolume
+	for i := range m.userConfig.AmbienceSounds {
+		m.userConfig.AmbienceSounds[i].Enabled = i == 0
+		m.userConfig.AmbienceSounds[i].Volume = config.DefaultAmbienceVolume
 	}
-	m.saveAmbientSettings()
+	m.saveAmbienceSettings()
 	m.setSettingsMessage("Reset to defaults")
 }
 
