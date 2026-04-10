@@ -9,8 +9,8 @@ import (
 	"github.com/lightt77/veranda/internal/service"
 )
 
-// AmbientService manages ambient sound based on timer/stopwatch state
-type AmbientService struct {
+// AmbienceService manages ambience sound based on timer/stopwatch state
+type AmbienceService struct {
 	player           *Player
 	timerService     *service.TimerService
 	stopwatchService *service.StopwatchService
@@ -21,19 +21,19 @@ type AmbientService struct {
 	stopMonitorChan  chan struct{}
 }
 
-// NewAmbientService creates a new ambient sound service
-func NewAmbientService(
+// NewAmbienceService creates a new ambience sound service
+func NewAmbienceService(
 	cfg *config.AppConfig,
 	configDir string,
 	timerService *service.TimerService,
 	stopwatchService *service.StopwatchService,
-) (*AmbientService, error) {
+) (*AmbienceService, error) {
 	player, err := NewPlayer(cfg, configDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create audio player: %w", err)
 	}
 
-	return &AmbientService{
+	return &AmbienceService{
 		player:           player,
 		timerService:     timerService,
 		stopwatchService: stopwatchService,
@@ -43,8 +43,8 @@ func NewAmbientService(
 	}, nil
 }
 
-// Start starts the ambient sound service with auto-play monitoring
-func (s *AmbientService) Start() error {
+// Start starts the ambience sound service with auto-play monitoring
+func (s *AmbienceService) Start() error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
@@ -54,8 +54,8 @@ func (s *AmbientService) Start() error {
 	return nil
 }
 
-// Stop stops the ambient sound service
-func (s *AmbientService) Stop() {
+// Stop stops the ambience sound service
+func (s *AmbienceService) Stop() {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
@@ -63,16 +63,16 @@ func (s *AmbientService) Stop() {
 	s.player.Stop(config.AudioFadeOutDuration)
 }
 
-// Play starts playing ambient sounds immediately based on config
-func (s *AmbientService) Play() error {
+// Play starts playing ambience sounds immediately based on config
+func (s *AmbienceService) Play() error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	// Load user config to get ambient sound settings
+	// Load user config to get ambience sound settings
 	userConfig := config.LoadUserConfig(s.configDir)
 
-	// Play all enabled ambient sounds
-	if err := s.player.PlayMultiple(userConfig.AmbientSounds); err != nil {
+	// Play all enabled ambience sounds
+	if err := s.player.PlayMultiple(userConfig.AmbienceSounds); err != nil {
 		return err
 	}
 
@@ -84,18 +84,18 @@ func (s *AmbientService) Play() error {
 	return nil
 }
 
-// StopPlayback stops ambient sound playback
-func (s *AmbientService) StopPlayback() {
+// StopPlayback stops ambience sound playback
+func (s *AmbienceService) StopPlayback() {
 	s.player.Stop(config.AudioFadeOutDuration)
 }
 
-// IsPlaying returns whether ambient sound is playing
-func (s *AmbientService) IsPlaying() bool {
+// IsPlaying returns whether ambience sound is playing
+func (s *AmbienceService) IsPlaying() bool {
 	return s.player.IsPlaying()
 }
 
-// monitorActivity monitors timers and stopwatches to auto-start/stop ambient sound
-func (s *AmbientService) monitorActivity() {
+// monitorActivity monitors timers and stopwatches to auto-start/stop ambience sound
+func (s *AmbienceService) monitorActivity() {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
@@ -110,8 +110,8 @@ func (s *AmbientService) monitorActivity() {
 }
 
 // checkAndUpdatePlayback checks if any timer/stopwatch is running and updates playback
-func (s *AmbientService) checkAndUpdatePlayback() {
-	// Load user config first to check if ambient is enabled globally
+func (s *AmbienceService) checkAndUpdatePlayback() {
+	// Load user config first to check if ambience is enabled globally
 	userConfig := config.LoadUserConfig(s.configDir)
 
 	// Check if any timer is about to end (within fade out duration)
@@ -140,8 +140,8 @@ func (s *AmbientService) checkAndUpdatePlayback() {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	// If ambient is disabled globally, stop any auto-playing audio
-	if !userConfig.AmbientEnabled && s.player.IsPlaying() && s.isAutoPlaying {
+	// If ambience is disabled globally, stop any auto-playing audio
+	if !userConfig.AmbienceEnabled && s.player.IsPlaying() && s.isAutoPlaying {
 		s.player.Stop(config.AudioFadeOutDuration)
 		s.isAutoPlaying = false
 		return
@@ -154,10 +154,10 @@ func (s *AmbientService) checkAndUpdatePlayback() {
 		return
 	}
 
-	// Only auto-start if ambient is enabled globally
-	if userConfig.AmbientEnabled && anyActive && !s.player.IsPlaying() {
-		// Start ambient sound with all enabled sounds
-		if err := s.player.PlayMultiple(userConfig.AmbientSounds); err != nil {
+	// Only auto-start if ambience is enabled globally
+	if userConfig.AmbienceEnabled && anyActive && !s.player.IsPlaying() {
+		// Start ambience sound with all enabled sounds
+		if err := s.player.PlayMultiple(userConfig.AmbienceSounds); err != nil {
 			return
 		}
 		s.player.FadeIn(config.AudioFadeInDuration)
@@ -170,6 +170,6 @@ func (s *AmbientService) checkAndUpdatePlayback() {
 }
 
 // GetPlayer returns the underlying audio player for use by other services
-func (s *AmbientService) GetPlayer() *Player {
+func (s *AmbienceService) GetPlayer() *Player {
 	return s.player
 }
