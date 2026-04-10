@@ -31,6 +31,9 @@ type Model struct {
 	activeTab   int // 0 = timers/stopwatches, 1 = ambience, 2 = skyfield, 3 = prefs
 	selectedIdx int // currently selected item index (for prefs tab)
 
+	// Debug mode for diagnostics
+	debugMode bool
+
 	// Timers/Stopwatches tab state
 	showTimers            bool // 't' key - show timers section
 	showStopwatches       bool // 's' key - show stopwatches section
@@ -206,6 +209,8 @@ func New(port int, citiesRepo *repository.CitiesRepository, settingsRepo config.
 		activeColumn:          0,
 		timerScrollOffset:     0,
 		stopwatchScrollOffset: 0,
+		// Debug mode - disabled for production
+		debugMode: false,
 	}
 }
 
