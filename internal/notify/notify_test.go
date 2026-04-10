@@ -3,7 +3,6 @@ package notify_test
 import (
 	"testing"
 
-	"github.com/lightt77/veranda/internal/config"
 	"github.com/lightt77/veranda/internal/notify"
 )
 
