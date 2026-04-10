@@ -335,7 +335,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// View renders the TUI
+// View renders the TUI with fixed content area at bottom
 func (m Model) View() string {
 	if !m.client.IsRunning() {
 		return "\n  ⚠️  Daemon is not running.\n\n  Start it with: veranda daemon\n\n  Press 'q' to quit.\n"
@@ -346,48 +346,89 @@ func (m Model) View() string {
 		return "Loading..."
 	}
 
-	// Generate stars if we don't have any
-	if m.starfieldMode == ModeRandom && len(m.randomStarfield.GetStars()) == 0 {
-		contentHeight := 14
-		paddingBottom := 2
-		starAreaHeight := m.height - contentHeight - paddingBottom
-		if starAreaHeight < 8 {
-			starAreaHeight = 8
-		}
-		m.randomStarfield.Resize(m.width, m.height, starAreaHeight)
+	// Calculate starfield height (everything above content area)
+	starfieldHeight := m.height - ContentAreaHeight
+	if starfieldHeight < 8 {
+		starfieldHeight = 8
 	}
 
-	// Calculate star area dimensions
-	contentHeight := 14
-	paddingBottom := 2
-	starAreaHeight := m.height - contentHeight - paddingBottom
-	if starAreaHeight < 8 {
-		starAreaHeight = 8
+	// Generate stars if we don't have any
+	if m.starfieldMode == ModeRandom && len(m.randomStarfield.GetStars()) == 0 {
+		m.randomStarfield.Resize(m.width, m.height, starfieldHeight)
 	}
 
 	// Build starfield
 	var starfieldStr string
 	if m.showCityPicker {
-		starfieldStr = m.renderCityPicker(starAreaHeight)
+		starfieldStr = m.renderCityPicker(starfieldHeight)
 	} else if m.starfieldMode == ModeRealistic {
-		starfieldStr = m.renderRealisticStarfield(starAreaHeight)
+		starfieldStr = m.renderRealisticStarfield(starfieldHeight)
 	} else {
-		starfieldStr = m.renderRandomStarfield(starAreaHeight)
+		starfieldStr = m.renderRandomStarfield(starfieldHeight)
 	}
 
-	// Get content
-	content := m.renderContent()
-
-	// Use lipgloss to place content at bottom with fixed height
-	// This ensures consistent rendering and prevents remnants
-	contentArea := lipgloss.NewStyle().
-		Height(contentHeight).
-		Width(m.width).
-		Align(lipgloss.Left, lipgloss.Bottom).
-		Render(content)
+	// Render content in fixed viewport
+	contentViewport := m.renderContentViewport()
 
 	// Join starfield and content
-	return starfieldStr + "\n" + contentArea
+	return starfieldStr + "\n" + contentViewport
+}
+
+// renderContentViewport renders content in a fixed-height viewport with internal scrolling
+func (m Model) renderContentViewport() string {
+	// Get full content for current tab
+	var fullContent string
+	switch m.activeTab {
+	case 0:
+		fullContent = m.renderTimersStopwatches()
+	case 1:
+		fullContent = m.renderAmbience()
+	case 2:
+		fullContent = m.renderSkyfield()
+	case 3:
+		fullContent = m.renderPrefs()
+	}
+
+	lines := strings.Split(fullContent, "\n")
+	totalLines := len(lines)
+
+	// If content fits in viewport (<=10 lines): bottom-align it
+	if totalLines <= ContentAreaHeight {
+		// Pad with empty lines at top to push content to bottom
+		padding := ContentAreaHeight - totalLines
+		paddedLines := make([]string, padding)
+		for i := 0; i < padding; i++ {
+			paddedLines[i] = ""
+		}
+		paddedLines = append(paddedLines, lines...)
+		return strings.Join(paddedLines, "\n")
+	}
+
+	// Content exceeds viewport: show scrolled window with indicators
+	startIdx := m.contentScrollOffset
+	endIdx := startIdx + ContentAreaHeight
+
+	// Clamp to valid range
+	if endIdx > totalLines {
+		endIdx = totalLines
+		startIdx = totalLines - ContentAreaHeight
+	}
+	if startIdx < 0 {
+		startIdx = 0
+	}
+
+	// Extract visible lines
+	visibleLines := lines[startIdx:endIdx]
+
+	// Add scroll indicators
+	if startIdx > 0 {
+		visibleLines[0] = "↑ " + strings.TrimPrefix(visibleLines[0], "↑ ")
+	}
+	if endIdx < totalLines {
+		visibleLines[ContentAreaHeight-1] = "↓ more items"
+	}
+
+	return strings.Join(visibleLines, "\n")
 }
 
 // renderStarfield renders the appropriate starfield
