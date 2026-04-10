@@ -81,7 +81,6 @@ func (s *AmbientService) Play() error {
 
 	// Fade in
 	s.player.FadeIn(config.AudioFadeInDuration)
-	fmt.Println("Ambient sound started (manual)")
 	return nil
 }
 
@@ -112,6 +111,9 @@ func (s *AmbientService) monitorActivity() {
 
 // checkAndUpdatePlayback checks if any timer/stopwatch is running and updates playback
 func (s *AmbientService) checkAndUpdatePlayback() {
+	// Load user config first to check if ambient is enabled globally
+	userConfig := config.LoadUserConfig(s.configDir)
+
 	// Check if any timer is about to end (within fade out duration)
 	timersAboutToEnd, err := s.timerService.GetRunningTimersAboutToEnd(config.AudioFadeOutDuration)
 	if err != nil {
@@ -138,31 +140,32 @@ func (s *AmbientService) checkAndUpdatePlayback() {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
+	// If ambient is disabled globally, stop any auto-playing audio
+	if !userConfig.AmbientEnabled && s.player.IsPlaying() && s.isAutoPlaying {
+		s.player.Stop(config.AudioFadeOutDuration)
+		s.isAutoPlaying = false
+		return
+	}
+
 	// If a timer is about to end and we're auto-playing, stop playback
 	if len(timersAboutToEnd) > 0 && s.player.IsPlaying() && s.isAutoPlaying {
 		s.player.Stop(config.AudioFadeOutDuration)
 		s.isAutoPlaying = false
-		fmt.Println("Ambient sound stopping (timer about to end)")
 		return
 	}
 
-	if anyActive && !s.player.IsPlaying() {
-		// Load user config to get current ambient sound settings
-		userConfig := config.LoadUserConfig(s.configDir)
-
+	// Only auto-start if ambient is enabled globally
+	if userConfig.AmbientEnabled && anyActive && !s.player.IsPlaying() {
 		// Start ambient sound with all enabled sounds
 		if err := s.player.PlayMultiple(userConfig.AmbientSounds); err != nil {
-			fmt.Printf("Error starting ambient sound: %v\n", err)
 			return
 		}
 		s.player.FadeIn(config.AudioFadeInDuration)
 		s.isAutoPlaying = true
-		fmt.Println("Ambient sound started (timer/stopwatch active)")
 	} else if !anyActive && s.player.IsPlaying() && s.isAutoPlaying {
 		// Stop if no longer active (and we were auto-playing)
 		s.player.Stop(config.AudioFadeOutDuration)
 		s.isAutoPlaying = false
-		fmt.Println("Ambient sound stopped (no active timers)")
 	}
 }
 
