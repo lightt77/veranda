@@ -46,7 +46,7 @@ const (
 const (
 	DefaultTimerCompletionSound = "freesound_community-bell-98033.mp3"
 	DefaultChimeVolume          = 0.5 // 50% volume
-	DefaultAmbientVolume        = 0.5 // 50% volume
+	DefaultAmbientVolume        = 1.0 // 100% volume
 )
 
 // Config returns the full application configuration
@@ -93,6 +93,7 @@ type AmbientSoundConfig struct {
 type UserConfig struct {
 	TimerCompletionSound string               `json:"timer_completion_sound"`
 	ChimeVolume          float64              `json:"chime_volume"`
+	AmbientEnabled       bool                 `json:"ambient_enabled"` // Global ambient on/off switch
 	AmbientSounds        []AmbientSoundConfig `json:"ambient_sounds"`
 }
 
@@ -101,6 +102,7 @@ func DefaultUserConfig() *UserConfig {
 	return &UserConfig{
 		TimerCompletionSound: DefaultTimerCompletionSound,
 		ChimeVolume:          DefaultChimeVolume,
+		AmbientEnabled:       true,                   // Ambient sounds enabled by default
 		AmbientSounds:        []AmbientSoundConfig{}, // Empty by default, populated on first run with available files
 	}
 }
