@@ -228,8 +228,8 @@ func (c *Client) SetSetting(key, value string) error {
 	return decodeJSON(resp, &struct{}{})
 }
 
-// PlayAmbient starts ambient sound playback
-func (c *Client) PlayAmbient() error {
+// PlayAmbience starts ambient sound playback
+func (c *Client) PlayAmbience() error {
 	resp, err := c.doRequest("POST", "/ambient/play", nil)
 	if err != nil {
 		return err
@@ -237,8 +237,8 @@ func (c *Client) PlayAmbient() error {
 	return decodeJSON(resp, &struct{}{})
 }
 
-// StopAmbient stops ambient sound playback
-func (c *Client) StopAmbient() error {
+// StopAmbience stops ambient sound playback
+func (c *Client) StopAmbience() error {
 	resp, err := c.doRequest("POST", "/ambient/stop", nil)
 	if err != nil {
 		return err
@@ -246,8 +246,8 @@ func (c *Client) StopAmbient() error {
 	return decodeJSON(resp, &struct{}{})
 }
 
-// SetAmbientVolume sets ambient volume
-func (c *Client) SetAmbientVolume(volume float64) error {
+// SetAmbienceVolume sets ambient volume
+func (c *Client) SetAmbienceVolume(volume float64) error {
 	req := map[string]interface{}{
 		"volume": volume,
 	}

@@ -21,7 +21,7 @@ var daemonCmd = &cobra.Command{
 	Short: "Start the Veranda daemon",
 	Long: `Start the Veranda daemon server which handles:
 - Timer and stopwatch management
-- Ambient sound playback
+- Ambience sound playback
 - Desktop notifications
 - HTTP API for CLI commands`,
 	Run: runDaemon,
@@ -103,23 +103,23 @@ func runDaemon(cmd *cobra.Command, args []string) {
 	journalService := service.NewJournalService(journalRepo)
 	settingsService := service.NewSettingsService(settingsRepo)
 
-	// Initialize ambient sound service
-	var ambientService *audio.AmbientService
+	// Initialize ambience sound service
+	var ambienceService *audio.AmbienceService
 	var notifyAudioPlayer *audio.Player
-	ambientService, err = audio.NewAmbientService(cfg, cfg.DataDir, timerService, stopwatchService)
+	ambienceService, err = audio.NewAmbienceService(cfg, cfg.DataDir, timerService, stopwatchService)
 	if err != nil {
-		fmt.Printf("Note: Ambient sound service not available: %v\n", err)
+		fmt.Printf("Note: Ambience sound service not available: %v\n", err)
 	} else {
-		if err := ambientService.Start(); err != nil {
+		if err := ambienceService.Start(); err != nil {
 			fmt.Printf("Note: Failed to start ambient monitoring: %v\n", err)
 		} else {
-			fmt.Println("Ambient sound monitoring: started")
+			fmt.Println("Ambience sound monitoring: started")
 		}
 	}
 
 	// Get the audio player for notifications (either from ambient service or create standalone)
-	if ambientService != nil {
-		notifyAudioPlayer = ambientService.GetPlayer()
+	if ambienceService != nil {
+		notifyAudioPlayer = ambienceService.GetPlayer()
 	}
 	if notifyAudioPlayer == nil {
 		// Create standalone player for notifications if ambient service failed
@@ -152,7 +152,7 @@ func runDaemon(cmd *cobra.Command, args []string) {
 		stopwatchService,
 		journalService,
 		settingsService,
-		ambientService,
+		ambienceService,
 	)
 
 	if err := daemonServer.Start(); err != nil {
