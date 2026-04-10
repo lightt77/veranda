@@ -26,7 +26,7 @@ type Server struct {
 	stopwatchService *service.StopwatchService
 	journalService   *service.JournalService
 	settingsService  *service.SettingsService
-	ambientService   *audio.AmbientService
+	ambienceService  *audio.AmbienceService
 
 	// Activity tracking for auto-shutdown
 	lastActivity  time.Time
@@ -43,7 +43,7 @@ func NewServer(
 	stopwatchService *service.StopwatchService,
 	journalService *service.JournalService,
 	settingsService *service.SettingsService,
-	ambientService *audio.AmbientService,
+	ambienceService *audio.AmbienceService,
 ) *Server {
 	r := chi.NewRouter()
 
@@ -54,7 +54,7 @@ func NewServer(
 		stopwatchService: stopwatchService,
 		journalService:   journalService,
 		settingsService:  settingsService,
-		ambientService:   ambientService,
+		ambienceService:  ambienceService,
 		lastActivity:     time.Now(),
 		idleTimeout:      30 * time.Second, // Shutdown after 30s of inactivity
 		stopChan:         make(chan struct{}),
@@ -92,8 +92,8 @@ func (s *Server) HasWork() bool {
 		return true
 	}
 
-	// Check if ambient sound is playing
-	if s.ambientService != nil && s.ambientService.IsPlaying() {
+	// Check if ambience sound is playing
+	if s.ambienceService != nil && s.ambienceService.IsPlaying() {
 		return true
 	}
 

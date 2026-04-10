@@ -476,31 +476,31 @@ func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
 	go s.StopAndExit()
 }
 
-// Ambient sound handlers
+// Ambience sound handlers
 
 func (s *Server) handleAmbientStatus(w http.ResponseWriter, r *http.Request) {
-	if s.ambientService == nil {
+	if s.ambienceService == nil {
 		respondJSON(w, http.StatusOK, map[string]interface{}{
 			"enabled": false,
-			"message": "ambient sound not available",
+			"message": "ambience sound not available",
 		})
 		return
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"enabled": true,
-		"playing": s.ambientService.IsPlaying(),
+		"playing": s.ambienceService.IsPlaying(),
 		"note":    "volume and file list now configured per-sound via TUI",
 	})
 }
 
 func (s *Server) handleAmbientPlay(w http.ResponseWriter, r *http.Request) {
-	if s.ambientService == nil {
-		respondError(w, http.StatusServiceUnavailable, "ambient sound not available")
+	if s.ambienceService == nil {
+		respondError(w, http.StatusServiceUnavailable, "ambience sound not available")
 		return
 	}
 
-	if err := s.ambientService.Play(); err != nil {
+	if err := s.ambienceService.Play(); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -509,12 +509,12 @@ func (s *Server) handleAmbientPlay(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAmbientStop(w http.ResponseWriter, r *http.Request) {
-	if s.ambientService == nil {
-		respondError(w, http.StatusServiceUnavailable, "ambient sound not available")
+	if s.ambienceService == nil {
+		respondError(w, http.StatusServiceUnavailable, "ambience sound not available")
 		return
 	}
 
-	s.ambientService.StopPlayback()
+	s.ambienceService.StopPlayback()
 	respondJSON(w, http.StatusOK, map[string]string{"status": "stopped"})
 }
 
@@ -523,11 +523,11 @@ type setVolumeRequest struct {
 }
 
 func (s *Server) handleAmbientSetVolume(w http.ResponseWriter, r *http.Request) {
-	if s.ambientService == nil {
-		respondError(w, http.StatusServiceUnavailable, "ambient sound not available")
+	if s.ambienceService == nil {
+		respondError(w, http.StatusServiceUnavailable, "ambience sound not available")
 		return
 	}
 
 	// Volume is now controlled per-sound via TUI/config, not via API
-	respondError(w, http.StatusNotImplemented, "volume is now controlled per-sound via TUI. Use the Ambient Sounds tab.")
+	respondError(w, http.StatusNotImplemented, "volume is now controlled per-sound via TUI. Use the Ambience tab tab.")
 }
