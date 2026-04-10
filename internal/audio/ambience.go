@@ -15,7 +15,7 @@ type AmbienceService struct {
 	timerService     *service.TimerService
 	stopwatchService *service.StopwatchService
 	config           *config.AppConfig
-	configDir        string
+	settingsRepo     config.SettingsRepository
 	isAutoPlaying    bool
 	mutex            sync.RWMutex
 	stopMonitorChan  chan struct{}
@@ -24,11 +24,11 @@ type AmbienceService struct {
 // NewAmbienceService creates a new ambience sound service
 func NewAmbienceService(
 	cfg *config.AppConfig,
-	configDir string,
+	settingsRepo config.SettingsRepository,
 	timerService *service.TimerService,
 	stopwatchService *service.StopwatchService,
 ) (*AmbienceService, error) {
-	player, err := NewPlayer(cfg, configDir)
+	player, err := NewPlayer(cfg, cfg.DataDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create audio player: %w", err)
 	}
@@ -38,7 +38,7 @@ func NewAmbienceService(
 		timerService:     timerService,
 		stopwatchService: stopwatchService,
 		config:           cfg,
-		configDir:        configDir,
+		settingsRepo:     settingsRepo,
 		stopMonitorChan:  make(chan struct{}),
 	}, nil
 }
@@ -69,7 +69,7 @@ func (s *AmbienceService) Play() error {
 	defer s.mutex.Unlock()
 
 	// Load user config to get ambience sound settings
-	userConfig := config.LoadUserConfig(s.configDir)
+	userConfig := config.LoadUserConfig(s.settingsRepo)
 
 	// Play all enabled ambience sounds
 	if err := s.player.PlayMultiple(userConfig.AmbienceSounds); err != nil {
@@ -112,7 +112,7 @@ func (s *AmbienceService) monitorActivity() {
 // checkAndUpdatePlayback checks if any timer/stopwatch is running and updates playback
 func (s *AmbienceService) checkAndUpdatePlayback() {
 	// Load user config first to check if ambience is enabled globally
-	userConfig := config.LoadUserConfig(s.configDir)
+	userConfig := config.LoadUserConfig(s.settingsRepo)
 
 	// Check if any timer is about to end (within fade out duration)
 	timersAboutToEnd, err := s.timerService.GetRunningTimersAboutToEnd(config.AudioFadeOutDuration)
