@@ -40,7 +40,9 @@ type AmbientStream struct {
 	ctrl       *beep.Ctrl
 	volumeCtrl *effects.Volume
 	stopChan   chan struct{}
-	stopOnce   sync.Once // ensures stopChan is closed only once
+	stopOnce   sync.Once     // ensures stopChan is closed only once
+	readyChan  chan struct{} // signals when volumeCtrl is initialized
+	readyOnce  sync.Once     // ensures readyChan is closed only once
 	wg         sync.WaitGroup
 	isPlaying  bool
 	isTest     bool // true if this is a test playback (non-looping)
@@ -107,32 +109,50 @@ func (p *Player) IsFading() bool {
 // Each sound plays at its configured volume
 func (p *Player) PlayMultiple(sounds []config.AmbientSoundConfig) error {
 	p.mutex.Lock()
-	defer p.mutex.Unlock()
 
 	// Stop any existing streams first
 	p.stopAllStreamsLocked()
 
+	// Collect ready channels to wait for initialization
+	var readyChans []chan struct{}
+
 	// Start each enabled sound
+	enabledCount := 0
 	for _, sound := range sounds {
 		if !sound.Enabled {
 			continue
 		}
+		enabledCount++
 
 		stream := &AmbientStream{
-			filename: sound.Filename,
-			volume:   sound.Volume,
-			enabled:  sound.Enabled,
-			stopChan: make(chan struct{}),
-			isTest:   false,
+			filename:  sound.Filename,
+			volume:    sound.Volume,
+			enabled:   sound.Enabled,
+			stopChan:  make(chan struct{}),
+			readyChan: make(chan struct{}),
+			isTest:    false,
 		}
 
 		p.streams[sound.Filename] = stream
+		readyChans = append(readyChans, stream.readyChan)
 		stream.wg.Add(1)
 		go p.playbackLoop(stream)
 	}
 
-	// Give streams a moment to initialize volume controls
-	time.Sleep(100 * time.Millisecond)
+	// Release lock before waiting for ready channels to avoid deadlock
+	// (playFile needs the lock to set volumeCtrl and close readyChan)
+	p.mutex.Unlock()
+
+	// Wait for all streams to initialize volume controls before returning
+	// This ensures FadeIn will work correctly (with timeout)
+	for _, readyChan := range readyChans {
+		select {
+		case <-readyChan:
+			// Stream is ready
+		case <-time.After(5 * time.Second):
+			// Timeout - continue anyway
+		}
+	}
 
 	return nil
 }
@@ -155,11 +175,12 @@ func (p *Player) TestPlay(filename string, volume float64) (func(), error) {
 	}
 
 	stream := &AmbientStream{
-		filename: filename,
-		volume:   volume,
-		enabled:  true,
-		stopChan: make(chan struct{}),
-		isTest:   true, // Non-looping
+		filename:  filename,
+		volume:    volume,
+		enabled:   true,
+		stopChan:  make(chan struct{}),
+		readyChan: make(chan struct{}), // Initialize ready channel
+		isTest:    true,                // Non-looping
 	}
 
 	p.testStreams[filename] = stream
@@ -167,7 +188,13 @@ func (p *Player) TestPlay(filename string, volume float64) (func(), error) {
 	go p.playbackLoop(stream)
 	p.mutex.Unlock()
 
-	// Give stream moment to initialize
+	// Wait for playback to initialize volume control before fading (with timeout)
+	select {
+	case <-stream.readyChan:
+		// Ready
+	case <-time.After(5 * time.Second):
+		return nil, fmt.Errorf("timeout waiting for audio initialization")
+	}
 	time.Sleep(50 * time.Millisecond)
 
 	// Apply fade in
@@ -229,8 +256,50 @@ func (p *Player) IsTestPlaying(filename string) bool {
 	return false
 }
 
+// SetTestVolume updates the volume of a playing test stream in real-time
+func (p *Player) SetTestVolume(filename string, volume float64) {
+	p.mutex.Lock()
+	stream, ok := p.testStreams[filename]
+	if !ok || stream.volumeCtrl == nil {
+		p.mutex.Unlock()
+		return
+	}
+	stream.volume = volume
+	targetDB := volumeToDB(volume * p.globalVol)
+	stream.volumeCtrl.Volume = targetDB
+	stream.volumeCtrl.Silent = volume == 0
+	p.mutex.Unlock()
+}
+
 // StopAllTestPlays stops all test playbacks
 func (p *Player) StopAllTestPlays() {
+	p.mutex.Lock()
+	for filename, stream := range p.testStreams {
+		p.stopStreamLocked(stream)
+		delete(p.testStreams, filename)
+	}
+	p.mutex.Unlock()
+}
+
+// StopAllTestPlaysWithFade stops all test playbacks with fade out
+func (p *Player) StopAllTestPlaysWithFade() {
+	p.mutex.Lock()
+	// Get all streams to fade out
+	streams := make([]*AmbientStream, 0, len(p.testStreams))
+	for _, stream := range p.testStreams {
+		streams = append(streams, stream)
+	}
+	p.mutex.Unlock()
+
+	// Fade out all streams first
+	for _, stream := range streams {
+		p.fadeOutStream(stream, config.AudioFadeOutDuration)
+	}
+
+	// Wait for fade out to complete
+	time.Sleep(time.Duration(config.AudioFadeOutDuration) * time.Millisecond)
+
+	// Now stop all streams
 	p.mutex.Lock()
 	for filename, stream := range p.testStreams {
 		p.stopStreamLocked(stream)
@@ -387,6 +456,10 @@ func (p *Player) playbackLoop(stream *AmbientStream) {
 		default:
 			if err := p.playFile(stream, fullPath); err != nil {
 				fmt.Fprintf(os.Stderr, "Error playing %s: %v\n", stream.filename, err)
+				// Signal ready channel even on error to prevent hanging
+				stream.readyOnce.Do(func() {
+					close(stream.readyChan)
+				})
 				// Don't loop on error, exit
 				return
 			}
@@ -421,6 +494,10 @@ func (p *Player) playFile(stream *AmbientStream, filename string) error {
 	}
 	stream.volumeCtrl = volCtrl
 	stream.isPlaying = true
+	// Signal that volume control is ready for fade operations (only once)
+	stream.readyOnce.Do(func() {
+		close(stream.readyChan)
+	})
 	p.mutex.Unlock()
 
 	// Play with volume control
@@ -436,7 +513,8 @@ func (p *Player) playFile(stream *AmbientStream, filename string) error {
 	case <-done:
 		return nil
 	case <-stream.stopChan:
-		speaker.Clear()
+		// Just close the streamer and file - don't call speaker.Clear()
+		// as that would stop ALL streams, not just this one
 		streamer.Close()
 		f.Close()
 		return nil
