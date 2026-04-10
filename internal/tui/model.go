@@ -28,7 +28,7 @@ type Model struct {
 	client        *daemon.Client
 	timers        []map[string]interface{}
 	stopwatches   []map[string]interface{}
-	activeTab     int  // 0 = timers, 1 = stopwatches, 2 = ambient sounds, 3 = preferences
+	activeTab     int  // 0 = timers/stopwatches, 1 = ambience, 2 = skyfield, 3 = prefs
 	showCompleted bool // toggle to show/hide completed timers
 	selectedIdx   int  // currently selected item index
 	width         int
@@ -68,11 +68,11 @@ type Model struct {
 	// Chime volume editing
 	editingChimeVolume bool
 
-	// Ambient Sounds tab
-	availableAmbientFiles []string
-	ambientSelectedIdx    int   // index in ambientDisplayOrder
-	ambientDisplayOrder   []int // maps display index -> config index (sorted by filename)
-	editingAmbientVolume  bool
+	// Ambience tab
+	availableAmbienceFiles []string
+	ambienceSelectedIdx    int   // index in ambienceDisplayOrder
+	ambienceDisplayOrder   []int // maps display index -> config index (sorted by filename)
+	editingAmbienceVolume  bool
 
 	// Audio player for test playback (initialized on first use)
 	testAudioPlayer *audio.Player
@@ -101,12 +101,12 @@ type dataMsg struct {
 	stopwatches []map[string]interface{}
 }
 
-// testStartedMsg is sent when ambient test playback starts
+// testStartedMsg is sent when ambience test playback starts
 type testStartedMsg struct {
 	filename string
 }
 
-// testStoppedMsg is sent when ambient test playback stops
+// testStoppedMsg is sent when ambience test playback stops
 type testStoppedMsg struct {
 	filename string
 }
@@ -142,15 +142,15 @@ func New(port int, citiesRepo *repository.CitiesRepository) Model {
 	availableSounds := loadAvailableSoundFiles(chimesDir)
 	availableAmbience := loadAvailableSoundFiles(ambienceDir)
 
-	// Initialize ambient sounds if empty (first run)
-	if len(userConfig.AmbientSounds) == 0 && len(availableAmbience) > 0 {
+	// Initialize ambience sounds if empty (first run)
+	if len(userConfig.AmbienceSounds) == 0 && len(availableAmbience) > 0 {
 		// Create config entries for all available files
 		// First one enabled by default, rest disabled
 		for i, filename := range availableAmbience {
 			enabled := i == 0 // Only first one enabled
-			userConfig.AmbientSounds = append(userConfig.AmbientSounds, config.AmbientSoundConfig{
+			userConfig.AmbienceSounds = append(userConfig.AmbienceSounds, config.AmbienceSoundConfig{
 				Filename: filename,
-				Volume:   config.DefaultAmbientVolume,
+				Volume:   config.DefaultAmbienceVolume,
 				Enabled:  enabled,
 			})
 		}
@@ -159,25 +159,25 @@ func New(port int, citiesRepo *repository.CitiesRepository) Model {
 	}
 
 	// Initialize display order (sorted by filename)
-	displayOrder := initAmbientDisplayOrder(userConfig.AmbientSounds)
+	displayOrder := initAmbienceDisplayOrder(userConfig.AmbienceSounds)
 
 	return Model{
-		client:                daemon.NewClient(port),
-		activeTab:             0,
-		lastUpdate:            time.Now(),
-		starfieldMode:         ModeRandom,
-		randomStarfield:       starfield.NewRandomStarfield(),
-		realisticStarfield:    starfield.NewRealisticStarfield(observer),
-		citiesRepo:            citiesRepo,
-		currentCity:           defaultCity,
-		userConfig:            userConfig,
-		configDir:             configDir,
-		chimesDir:             chimesDir,
-		ambienceDir:           ambienceDir,
-		availableSoundFiles:   availableSounds,
-		availableAmbientFiles: availableAmbience,
-		ambientDisplayOrder:   displayOrder,
-		ambientSelectedIdx:    0,
+		client:                 daemon.NewClient(port),
+		activeTab:              0,
+		lastUpdate:             time.Now(),
+		starfieldMode:          ModeRandom,
+		randomStarfield:        starfield.NewRandomStarfield(),
+		realisticStarfield:     starfield.NewRealisticStarfield(observer),
+		citiesRepo:             citiesRepo,
+		currentCity:            defaultCity,
+		userConfig:             userConfig,
+		configDir:              configDir,
+		chimesDir:              chimesDir,
+		ambienceDir:            ambienceDir,
+		availableSoundFiles:    availableSounds,
+		availableAmbienceFiles: availableAmbience,
+		ambienceDisplayOrder:   displayOrder,
+		ambienceSelectedIdx:    0,
 	}
 }
 
@@ -191,8 +191,8 @@ func (m Model) Init() tea.Cmd {
 	)
 }
 
-// initAmbientDisplayOrder creates a sorted mapping from display index to config index
-func initAmbientDisplayOrder(sounds []config.AmbientSoundConfig) []int {
+// initAmbienceDisplayOrder creates a sorted mapping from display index to config index
+func initAmbienceDisplayOrder(sounds []config.AmbienceSoundConfig) []int {
 	order := make([]int, len(sounds))
 	for i := range sounds {
 		order[i] = i
