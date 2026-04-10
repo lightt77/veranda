@@ -998,28 +998,8 @@ func (m Model) renderStopwatches() string {
 func (m Model) renderTimersStopwatches() string {
 	var content string
 
-	// Header with toggle status
+	// Header
 	content += "Timers/Stopwatches\n\n"
-
-	// Show toggle status line
-	timersStatus := "off"
-	if m.showTimers {
-		timersStatus = "on"
-	}
-	stopwatchesStatus := "off"
-	if m.showStopwatches {
-		stopwatchesStatus = "on"
-	}
-	completedStatus := "hidden"
-	if m.showCompleted {
-		completedStatus = "shown"
-	}
-
-	content += lipgloss.NewStyle().Foreground(overlay0).Render(
-		fmt.Sprintf("[t]timers:%s [s]stopwatches:%s [h]completed:%s",
-			lipgloss.NewStyle().Foreground(mauve).Render(timersStatus),
-			lipgloss.NewStyle().Foreground(mauve).Render(stopwatchesStatus),
-			lipgloss.NewStyle().Foreground(mauve).Render(completedStatus))) + "\n\n"
 
 	// Handle different view modes
 	if !m.showTimers && !m.showStopwatches {
@@ -1037,37 +1017,56 @@ func (m Model) renderTimersStopwatches() string {
 		} else {
 			content += m.renderStopwatchesSection(visibleStopwatches, true)
 		}
-		return content
+	} else {
+		// Two column layout (both visible)
+		// Render side by side
+		timersContent := m.renderTimersSection(visibleTimers, false)
+		stopwatchesContent := m.renderStopwatchesSection(visibleStopwatches, false)
+
+		// Split into lines and combine side by side
+		timersLines := strings.Split(timersContent, "\n")
+		stopwatchLines := strings.Split(stopwatchesContent, "\n")
+
+		maxLines := max(len(timersLines), len(stopwatchLines))
+		for i := 0; i < maxLines; i++ {
+			timerLine := ""
+			if i < len(timersLines) {
+				timerLine = timersLines[i]
+			}
+			stopwatchLine := ""
+			if i < len(stopwatchLines) {
+				stopwatchLine = stopwatchLines[i]
+			}
+
+			// Pad timer line to consistent width (45 chars to accommodate progress bars)
+			padding := 45 - len(timerLine)
+			if padding < 0 {
+				padding = 0
+			}
+
+			content += timerLine + strings.Repeat(" ", padding) + stopwatchLine + "\n"
+		}
 	}
 
-	// Two column layout (both visible)
-	// Render side by side
-	timersContent := m.renderTimersSection(visibleTimers, false)
-	stopwatchesContent := m.renderStopwatchesSection(visibleStopwatches, false)
-
-	// Split into lines and combine side by side
-	timersLines := strings.Split(timersContent, "\n")
-	stopwatchLines := strings.Split(stopwatchesContent, "\n")
-
-	maxLines := max(len(timersLines), len(stopwatchLines))
-	for i := 0; i < maxLines; i++ {
-		timerLine := ""
-		if i < len(timersLines) {
-			timerLine = timersLines[i]
-		}
-		stopwatchLine := ""
-		if i < len(stopwatchLines) {
-			stopwatchLine = stopwatchLines[i]
-		}
-
-		// Pad timer line to consistent width (40 chars)
-		padding := 40 - len(timerLine)
-		if padding < 0 {
-			padding = 0
-		}
-
-		content += timerLine + strings.Repeat(" ", padding) + stopwatchLine + "\n"
+	// Show toggle status line at the bottom
+	timersStatus := "off"
+	if m.showTimers {
+		timersStatus = "on"
 	}
+	stopwatchesStatus := "off"
+	if m.showStopwatches {
+		stopwatchesStatus = "on"
+	}
+	completedStatus := "hidden"
+	if m.showCompleted {
+		completedStatus = "shown"
+	}
+
+	content += "\n" + lipgloss.NewStyle().Foreground(overlay0).Render(
+		fmt.Sprintf("[t]timers:%s [s]stopwatches:%s [h]completed:%s",
+			lipgloss.NewStyle().Foreground(mauve).Render(timersStatus),
+			lipgloss.NewStyle().Foreground(mauve).Render(stopwatchesStatus),
+			lipgloss.NewStyle().Foreground(mauve).Render(completedStatus))) + "\n"
 
 	return content
 }
@@ -1150,14 +1149,31 @@ func (m Model) renderTimersSection(timers []map[string]interface{}, fullWidth bo
 		} else {
 			remainingMs = int64(t["remaining_ms"].(float64))
 		}
+		durationMs := int64(t["duration_ms"].(float64))
 
 		remainingTime := formatDuration(remainingMs)
+		totalTime := formatDuration(durationMs)
 
-		content += fmt.Sprintf("%s%s %s %s\n",
+		// Get progress
+		var progress float64
+		if p, ok := t["progress"]; ok {
+			progress = p.(float64)
+		}
+
+		// Build progress bar
+		progressBar := renderProgressBar(progress, 15)
+		percent := int(progress * 100)
+
+		content += fmt.Sprintf("%s%s %s\n",
 			selected,
 			statusStyle.Render(statusIcon),
 			label,
+		)
+		content += fmt.Sprintf("    %s / %s %s %d%%\n",
 			remainingStyle.Render(remainingTime),
+			totalTime,
+			progressBar,
+			percent,
 		)
 	}
 
