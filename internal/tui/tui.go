@@ -140,6 +140,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return newM, nil
 			} else if m.activeTab == 0 {
 				m.navigateTimersStopwatches(-1)
+			} else if m.activeTab == 2 {
+				// Skyfield tab navigation
+				if m.skyfieldSelectedIdx > 0 {
+					m.skyfieldSelectedIdx--
+				}
 			} else {
 				m.selectedIdx = max(0, m.selectedIdx-1)
 			}
@@ -149,6 +154,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return newM, nil
 			} else if m.activeTab == 0 {
 				m.navigateTimersStopwatches(1)
+			} else if m.activeTab == 2 {
+				// Skyfield tab navigation
+				if m.skyfieldSelectedIdx < 2 {
+					m.skyfieldSelectedIdx++
+				}
 			} else {
 				maxIdx := len(m.timers) - 1
 				if m.activeTab == 3 {
@@ -159,10 +169,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "left":
 			if m.activeTab == 0 && m.showTimers && m.showStopwatches {
 				m.activeColumn = 0
+			} else if m.activeTab == 2 && m.skyfieldSelectedIdx == 0 {
+				// Toggle mode in skyfield tab
+				if m.userConfig.SkyfieldMode == "realistic" {
+					m.userConfig.SkyfieldMode = "random"
+					m.starfieldMode = ModeRandom
+				} else {
+					m.userConfig.SkyfieldMode = "realistic"
+					m.starfieldMode = ModeRealistic
+					m.realisticStarfield.Update(time.Now())
+				}
+				// Save to DB
+				_ = m.userConfig.Save(m.settingsRepo)
 			}
 		case "right":
 			if m.activeTab == 0 && m.showTimers && m.showStopwatches {
 				m.activeColumn = 1
+			} else if m.activeTab == 2 && m.skyfieldSelectedIdx == 0 {
+				// Toggle mode in skyfield tab
+				if m.userConfig.SkyfieldMode == "realistic" {
+					m.userConfig.SkyfieldMode = "random"
+					m.starfieldMode = ModeRandom
+				} else {
+					m.userConfig.SkyfieldMode = "realistic"
+					m.starfieldMode = ModeRealistic
+					m.realisticStarfield.Update(time.Now())
+				}
+				// Save to DB
+				_ = m.userConfig.Save(m.settingsRepo)
 			}
 		case " ", "p":
 			// Pause/resume selected timer or stopwatch
@@ -172,6 +206,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Toggle ambience enabled
 				newM, _, _ := m.handleAmbienceKey(" ")
 				return newM, nil
+			} else if m.activeTab == 2 && m.skyfieldSelectedIdx == 1 {
+				// Toggle names in skyfield tab
+				m.userConfig.SkyfieldShowNames = !m.userConfig.SkyfieldShowNames
+				// Save to DB
+				_ = m.userConfig.Save(m.settingsRepo)
 			}
 		case "d":
 			// Delete selected timer or stopwatch
@@ -235,24 +274,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				newM, _, _ := m.handleAmbienceKey("a")
 				return newM, nil
 			}
-		case "m":
-			// Toggle starfield mode
-			if m.starfieldMode == ModeRandom {
-				m.starfieldMode = ModeRealistic
-				m.realisticStarfield.Update(time.Now())
-			} else {
-				m.starfieldMode = ModeRandom
-			}
 		case "l":
-			// Open city picker
-			if m.citiesRepo != nil {
+			// Open city picker (only in skyfield tab when location is selected)
+			if m.activeTab == 2 && m.skyfieldSelectedIdx == 2 && m.citiesRepo != nil {
 				m.showCityPicker = true
 				m.cityPickerSearch = ""
 				m.loadAllCities()
 			}
-		case "n":
-			// Toggle object names display
-			m.showObjectNames = !m.showObjectNames
 		case "e":
 			// Edit sound file selection
 			if m.activeTab == 3 {
@@ -694,27 +722,9 @@ func (m Model) renderContent() string {
 		}
 	}
 
-	// Status line with mode, location, and names toggle
-	modeText := "random"
-	if m.starfieldMode == ModeRealistic {
-		modeText = "realistic"
-	}
-
-	locationText := "Mumbai"
-	if m.currentCity != nil {
-		locationText = m.currentCity.City
-	}
-
-	namesText := "off"
-	if m.showObjectNames {
-		namesText = "on"
-	}
-
+	// Status line - simplified since mode/location/names moved to skyfield tab
 	statusLine := lipgloss.NewStyle().Foreground(overlay0).Render(
-		fmt.Sprintf("Mode: %s [%s] | Loc: %s [%s] | Names: %s [%s] | ",
-			modeText, lipgloss.NewStyle().Foreground(mauve).Render("m"),
-			locationText, lipgloss.NewStyle().Foreground(mauve).Render("l"),
-			namesText, lipgloss.NewStyle().Foreground(mauve).Render("n")),
+		fmt.Sprintf("veranda %s | ", config.AppVersion),
 	)
 
 	// Help - different based on active tab
@@ -739,6 +749,20 @@ func (m Model) renderContent() string {
 				lipgloss.NewStyle().Foreground(mauve).Render("r") +
 				lipgloss.NewStyle().Foreground(overlay0).Render(":reset")
 		}
+	case 2:
+		// Skyfield tab
+		helpText = lipgloss.NewStyle().Foreground(mauve).Render("↑↓") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":select ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("←/→") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":mode ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("space") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":names ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("l") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":location ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("tab") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":switch ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("q") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":quit")
 	case 3:
 		// Preferences tab
 		if m.selectingSoundFile {
@@ -1580,24 +1604,42 @@ func (m Model) renderSkyfield() string {
 	if modeText == "" {
 		modeText = "random"
 	}
-	content += fmt.Sprintf("Mode:      %s\n", modeText)
+	modeLine := fmt.Sprintf("Mode:      %s", modeText)
+	if m.skyfieldSelectedIdx == 0 {
+		modeLine = selectedStyle.Render("> ") + modeLine
+	} else {
+		modeLine = "  " + modeLine
+	}
+	content += modeLine + "\n"
 
 	// Names setting
 	namesText := "off"
 	if m.userConfig.SkyfieldShowNames {
 		namesText = "on"
 	}
-	content += fmt.Sprintf("Names:     %s\n", namesText)
+	namesLine := fmt.Sprintf("Names:     %s", namesText)
+	if m.skyfieldSelectedIdx == 1 {
+		namesLine = selectedStyle.Render("> ") + namesLine
+	} else {
+		namesLine = "  " + namesLine
+	}
+	content += namesLine + "\n"
 
 	// Location
 	locationText := "Mumbai"
 	if m.currentCity != nil {
 		locationText = m.currentCity.City
 	}
-	content += fmt.Sprintf("Location:  %s\n", locationText)
+	locationLine := fmt.Sprintf("Location:  %s", locationText)
+	if m.skyfieldSelectedIdx == 2 {
+		locationLine = selectedStyle.Render("> ") + locationLine
+	} else {
+		locationLine = "  " + locationLine
+	}
+	content += locationLine + "\n"
 
 	content += "\n" + lipgloss.NewStyle().Foreground(overlay0).Render(
-		"[←/→]:toggle mode [space]:toggle names [l]:change location") + "\n"
+		"↑↓:select [←/→]:toggle mode [space]:toggle names [l]:change location") + "\n"
 
 	return content
 }
