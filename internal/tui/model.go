@@ -50,6 +50,9 @@ type Model struct {
 	err          error
 	lastUpdate   time.Time
 
+	// Skyfield tab state
+	skyfieldSelectedIdx int // 0 = mode, 1 = names, 2 = location
+
 	// Starfield mode
 	starfieldMode      StarfieldMode
 	randomStarfield    *starfield.RandomStarfield
