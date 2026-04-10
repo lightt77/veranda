@@ -3,11 +3,36 @@ package notify_test
 import (
 	"testing"
 
+	"github.com/lightt77/veranda/internal/config"
 	"github.com/lightt77/veranda/internal/notify"
 )
 
+// mockSettingsRepository is a mock implementation of config.SettingsRepository for testing
+type mockSettingsRepository struct {
+	data map[string]string
+}
+
+func newMockSettingsRepository() *mockSettingsRepository {
+	return &mockSettingsRepository{
+		data: map[string]string{
+			"timer_completion_sound": "bell.mp3",
+			"chime_volume":           "0.5",
+		},
+	}
+}
+
+func (m *mockSettingsRepository) Get(key string) (string, error) {
+	return m.data[key], nil
+}
+
+func (m *mockSettingsRepository) Set(key, value string) error {
+	m.data[key] = value
+	return nil
+}
+
 func TestNewService(t *testing.T) {
-	service := notify.NewService("test-app", nil, "/tmp/test-config")
+	mockRepo := newMockSettingsRepository()
+	service := notify.NewService("test-app", nil, mockRepo)
 	if service == nil {
 		t.Fatal("Expected service to be created")
 	}
@@ -18,7 +43,8 @@ func TestNewService(t *testing.T) {
 }
 
 func TestSetEnabled(t *testing.T) {
-	service := notify.NewService("test-app", nil, "/tmp/test-config")
+	mockRepo := newMockSettingsRepository()
+	service := notify.NewService("test-app", nil, mockRepo)
 
 	// Disable
 	service.SetEnabled(false)
@@ -34,7 +60,8 @@ func TestSetEnabled(t *testing.T) {
 }
 
 func TestNotifyDisabled(t *testing.T) {
-	service := notify.NewService("test-app", nil, "/tmp/test-config")
+	mockRepo := newMockSettingsRepository()
+	service := notify.NewService("test-app", nil, mockRepo)
 	service.SetEnabled(false)
 
 	// Should not error when disabled
@@ -72,7 +99,8 @@ func TestIsSupported(t *testing.T) {
 }
 
 func TestNotifyf(t *testing.T) {
-	service := notify.NewService("test-app", nil, "/tmp/test-config")
+	mockRepo := newMockSettingsRepository()
+	service := notify.NewService("test-app", nil, mockRepo)
 	service.SetEnabled(false) // Disable to avoid actual notifications during test
 
 	// Should not error with formatting
@@ -83,7 +111,8 @@ func TestNotifyf(t *testing.T) {
 }
 
 func TestTimerCompletion(t *testing.T) {
-	service := notify.NewService("test-app", nil, "/tmp/test-config")
+	mockRepo := newMockSettingsRepository()
+	service := notify.NewService("test-app", nil, mockRepo)
 	service.SetEnabled(false)
 
 	err := service.TimerCompletion("Pomodoro Timer")
@@ -93,7 +122,8 @@ func TestTimerCompletion(t *testing.T) {
 }
 
 func TestStopwatchLap(t *testing.T) {
-	service := notify.NewService("test-app", nil, "/tmp/test-config")
+	mockRepo := newMockSettingsRepository()
+	service := notify.NewService("test-app", nil, mockRepo)
 	service.SetEnabled(false)
 
 	err := service.StopwatchLap("Workout", 3, "01:45")
@@ -103,7 +133,8 @@ func TestStopwatchLap(t *testing.T) {
 }
 
 func TestDaemonStarted(t *testing.T) {
-	service := notify.NewService("test-app", nil, "/tmp/test-config")
+	mockRepo := newMockSettingsRepository()
+	service := notify.NewService("test-app", nil, mockRepo)
 	service.SetEnabled(false)
 
 	err := service.DaemonStarted()
