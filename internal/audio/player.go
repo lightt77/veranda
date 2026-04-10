@@ -1,4 +1,4 @@
-// Package audio provides ambient sound playback functionality.
+// Package audio provides audio playback functionality.
 package audio
 
 import (
@@ -32,8 +32,8 @@ func initSpeaker() error {
 	return speakerInitErr
 }
 
-// AmbientStream represents a single ambient sound stream
-type AmbientStream struct {
+// AudioStream represents a single audio stream
+type AudioStream struct {
 	filename   string
 	volume     float64
 	enabled    bool
@@ -48,19 +48,19 @@ type AmbientStream struct {
 	isTest     bool // true if this is a test playback (non-looping)
 }
 
-// Player manages multiple parallel ambient sound streams
+// Player manages multiple parallel audio streams
 type Player struct {
 	config      *config.AppConfig
 	configDir   string
 	soundsDir   string
 	chimesDir   string
 	ambienceDir string
-	streams     map[string]*AmbientStream // key is filename
-	globalVol   float64                   // global volume multiplier
+	streams     map[string]*AudioStream // key is filename
+	globalVol   float64                 // global volume multiplier
 	isFading    bool
 	sampleRate  beep.SampleRate
 	mutex       sync.RWMutex
-	testStreams map[string]*AmbientStream // separate map for test streams
+	testStreams map[string]*AudioStream // separate map for test streams
 }
 
 // NewPlayer creates a new audio player
@@ -76,8 +76,8 @@ func NewPlayer(cfg *config.AppConfig, configDir string) (*Player, error) {
 		soundsDir:   cfg.SoundsDir,
 		chimesDir:   cfg.ChimesDir,
 		ambienceDir: cfg.AmbienceDir,
-		streams:     make(map[string]*AmbientStream),
-		testStreams: make(map[string]*AmbientStream),
+		streams:     make(map[string]*AudioStream),
+		testStreams: make(map[string]*AudioStream),
 		globalVol:   1.0, // Default 100% global volume
 		sampleRate:  speakerSampleRate,
 	}
@@ -85,7 +85,7 @@ func NewPlayer(cfg *config.AppConfig, configDir string) (*Player, error) {
 	return player, nil
 }
 
-// IsPlaying returns whether any ambient audio is currently playing
+// IsPlaying returns whether any audio is currently playing
 func (p *Player) IsPlaying() bool {
 	p.mutex.RLock()
 	defer p.mutex.RUnlock()
@@ -105,9 +105,9 @@ func (p *Player) IsFading() bool {
 	return p.isFading
 }
 
-// PlayMultiple starts playing multiple ambient sounds in parallel
+// PlayMultiple starts playing multiple audios in parallel
 // Each sound plays at its configured volume
-func (p *Player) PlayMultiple(sounds []config.AmbientSoundConfig) error {
+func (p *Player) PlayMultiple(sounds []config.AmbienceSoundConfig) error {
 	p.mutex.Lock()
 
 	// Stop any existing streams first
@@ -124,7 +124,7 @@ func (p *Player) PlayMultiple(sounds []config.AmbientSoundConfig) error {
 		}
 		enabledCount++
 
-		stream := &AmbientStream{
+		stream := &AudioStream{
 			filename:  sound.Filename,
 			volume:    sound.Volume,
 			enabled:   sound.Enabled,
@@ -157,7 +157,7 @@ func (p *Player) PlayMultiple(sounds []config.AmbientSoundConfig) error {
 	return nil
 }
 
-// TestPlay starts playing a single ambient sound for testing (non-looping)
+// TestPlay starts playing a single audio for testing (non-looping)
 // Returns a stop function to stop the test playback
 func (p *Player) TestPlay(filename string, volume float64) (func(), error) {
 	// Resolve full path
@@ -174,7 +174,7 @@ func (p *Player) TestPlay(filename string, volume float64) (func(), error) {
 		delete(p.testStreams, filename)
 	}
 
-	stream := &AmbientStream{
+	stream := &AudioStream{
 		filename:  filename,
 		volume:    volume,
 		enabled:   true,
@@ -285,7 +285,7 @@ func (p *Player) StopAllTestPlays() {
 func (p *Player) StopAllTestPlaysWithFade() {
 	p.mutex.Lock()
 	// Get all streams to fade out
-	streams := make([]*AmbientStream, 0, len(p.testStreams))
+	streams := make([]*AudioStream, 0, len(p.testStreams))
 	for _, stream := range p.testStreams {
 		streams = append(streams, stream)
 	}
@@ -343,7 +343,7 @@ func (p *Player) stopAllStreamsLocked() {
 }
 
 // stopStreamLocked stops a single stream (must hold lock)
-func (p *Player) stopStreamLocked(stream *AmbientStream) {
+func (p *Player) stopStreamLocked(stream *AudioStream) {
 	if !stream.isPlaying {
 		return
 	}
@@ -358,7 +358,7 @@ func (p *Player) stopStreamLocked(stream *AmbientStream) {
 // FadeIn gradually increases volume for all streams from 0 to target
 func (p *Player) FadeIn(durationMs int64) {
 	p.mutex.RLock()
-	streams := make([]*AmbientStream, 0, len(p.streams))
+	streams := make([]*AudioStream, 0, len(p.streams))
 	for _, s := range p.streams {
 		streams = append(streams, s)
 	}
@@ -370,7 +370,7 @@ func (p *Player) FadeIn(durationMs int64) {
 }
 
 // fadeInStream gradually increases volume for a single stream
-func (p *Player) fadeInStream(stream *AmbientStream, durationMs int64) {
+func (p *Player) fadeInStream(stream *AudioStream, durationMs int64) {
 	if stream.volumeCtrl == nil || durationMs <= 0 {
 		return
 	}
@@ -407,7 +407,7 @@ func (p *Player) fadeInStream(stream *AmbientStream, durationMs int64) {
 
 // fadeOutStream gradually decreases volume to 0 for a single stream
 // This runs asynchronously in a goroutine to avoid blocking the caller
-func (p *Player) fadeOutStream(stream *AmbientStream, durationMs int64) {
+func (p *Player) fadeOutStream(stream *AudioStream, durationMs int64) {
 	if stream.volumeCtrl == nil || durationMs <= 0 {
 		return
 	}
@@ -444,7 +444,7 @@ func (p *Player) fadeOutStream(stream *AmbientStream, durationMs int64) {
 
 // playbackLoop continuously plays a sound file
 // Note: Test playback also loops for continuous testing
-func (p *Player) playbackLoop(stream *AmbientStream) {
+func (p *Player) playbackLoop(stream *AudioStream) {
 	defer stream.wg.Done()
 
 	fullPath := filepath.Join(p.ambienceDir, stream.filename)
@@ -469,7 +469,7 @@ func (p *Player) playbackLoop(stream *AmbientStream) {
 }
 
 // playFile plays a single audio file into a stream
-func (p *Player) playFile(stream *AmbientStream, filename string) error {
+func (p *Player) playFile(stream *AudioStream, filename string) error {
 	f, err := os.Open(filename)
 	if err != nil {
 		return err
