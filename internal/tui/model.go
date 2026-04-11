@@ -58,14 +58,12 @@ type Model struct {
 	debugMode bool
 
 	// Timers/Stopwatches tab state
-	showTimers            bool // 't' key - show timers section
-	showStopwatches       bool // 's' key - show stopwatches section
-	showCompleted         bool // 'h' key - show completed/archived items
-	timerSelectedIdx      int  // selection within visible timers
-	stopwatchSelectedIdx  int  // selection within visible stopwatches
-	activeColumn          int  // 0 = timers, 1 = stopwatches (when both visible)
-	timerScrollOffset     int  // scroll position for timers
-	stopwatchScrollOffset int  // scroll position for stopwatches
+	showTimers           bool // 't' key - show timers section
+	showStopwatches      bool // 's' key - show stopwatches section
+	showCompleted        bool // 'h' key - show completed/archived items
+	timerSelectedIdx     int  // selection within visible timers
+	stopwatchSelectedIdx int  // selection within visible stopwatches
+	activeColumn         int  // 0 = timers, 1 = stopwatches (when both visible)
 
 	// Command mode for creating timers/stopwatches
 	commandMode  bool   // '/' enters command mode
@@ -222,14 +220,12 @@ func New(port int, citiesRepo *repository.CitiesRepository, settingsRepo config.
 		ambienceDisplayOrder:   displayOrder,
 		ambienceSelectedIdx:    0,
 		// Timers/Stopwatches tab defaults
-		showTimers:            true,
-		showStopwatches:       true,
-		showCompleted:         false,
-		timerSelectedIdx:      0,
-		stopwatchSelectedIdx:  0,
-		activeColumn:          0,
-		timerScrollOffset:     0,
-		stopwatchScrollOffset: 0,
+		showTimers:           true,
+		showStopwatches:      true,
+		showCompleted:        false,
+		timerSelectedIdx:     0,
+		stopwatchSelectedIdx: 0,
+		activeColumn:         0,
 		// Debug mode - disabled for production
 		debugMode: false,
 	}
