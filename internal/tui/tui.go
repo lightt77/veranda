@@ -1618,6 +1618,10 @@ func (m Model) renderTimersStopwatchesContent() string {
 		timersContent := m.renderTimersSectionContent(visibleTimers, false)
 		stopwatchesContent := m.renderStopwatchesSectionContent(visibleStopwatches, false)
 
+		// Trim trailing newlines to avoid extra empty lines when splitting
+		timersContent = strings.TrimRight(timersContent, "\n")
+		stopwatchesContent = strings.TrimRight(stopwatchesContent, "\n")
+
 		// Split into lines and combine side by side
 		timersLines := strings.Split(timersContent, "\n")
 		stopwatchLines := strings.Split(stopwatchesContent, "\n")
