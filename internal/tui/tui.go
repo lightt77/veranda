@@ -945,20 +945,14 @@ func (m Model) handleTimersStopwatchesToggle() (tea.Model, tea.Cmd) {
 	if m.activeColumn == 0 && m.showTimers {
 		visibleTimers := m.getVisibleTimers()
 		if m.timerSelectedIdx < len(visibleTimers) {
-			// Find the actual index in m.timers
-			actualIdx := m.findTimerActualIndex(visibleTimers[m.timerSelectedIdx])
-			if actualIdx >= 0 {
-				return m, toggleTimerCmd(m.client, m.timers, actualIdx, m.showCompleted)
-			}
+			// Pass visible index - toggleTimerCmd will convert to actual index
+			return m, toggleTimerCmd(m.client, m.timers, m.timerSelectedIdx, m.showCompleted)
 		}
 	} else if m.activeColumn == 1 && m.showStopwatches {
 		visibleStopwatches := m.getVisibleStopwatches()
 		if m.stopwatchSelectedIdx < len(visibleStopwatches) {
-			// Find the actual index in m.stopwatches
-			actualIdx := m.findStopwatchActualIndex(visibleStopwatches[m.stopwatchSelectedIdx])
-			if actualIdx >= 0 {
-				return m, toggleStopwatchCmd(m.client, m.stopwatches, actualIdx)
-			}
+			// Pass visible index - toggleStopwatchCmd will convert to actual index
+			return m, toggleStopwatchCmd(m.client, m.stopwatches, m.stopwatchSelectedIdx)
 		}
 	}
 	return m, nil
@@ -969,18 +963,14 @@ func (m Model) handleTimersStopwatchesDelete() (tea.Model, tea.Cmd) {
 	if m.activeColumn == 0 && m.showTimers {
 		visibleTimers := m.getVisibleTimers()
 		if m.timerSelectedIdx < len(visibleTimers) {
-			actualIdx := m.findTimerActualIndex(visibleTimers[m.timerSelectedIdx])
-			if actualIdx >= 0 {
-				return m, deleteTimerCmd(m.client, m.timers, actualIdx, m.showCompleted)
-			}
+			// Pass visible index - deleteTimerCmd will convert to actual index
+			return m, deleteTimerCmd(m.client, m.timers, m.timerSelectedIdx, m.showCompleted)
 		}
 	} else if m.activeColumn == 1 && m.showStopwatches {
 		visibleStopwatches := m.getVisibleStopwatches()
 		if m.stopwatchSelectedIdx < len(visibleStopwatches) {
-			actualIdx := m.findStopwatchActualIndex(visibleStopwatches[m.stopwatchSelectedIdx])
-			if actualIdx >= 0 {
-				return m, deleteStopwatchCmd(m.client, m.stopwatches, actualIdx)
-			}
+			// Pass visible index - deleteStopwatchCmd will convert to actual index
+			return m, deleteStopwatchCmd(m.client, m.stopwatches, m.stopwatchSelectedIdx)
 		}
 	}
 	return m, nil
