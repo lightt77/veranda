@@ -154,12 +154,12 @@ func (m Model) handleAmbienceKey(key string) (Model, tea.Cmd, bool) {
 		}
 		return m, nil, true
 	case "r":
-		// Reset to defaults
-		m.resetAmbience()
-		return m, nil, true
-	case "R":
 		// Refresh file list
 		m.refreshAmbienceFiles()
+		return m, nil, true
+	case "R":
+		// Reset to defaults
+		m.resetAmbience()
 		return m, nil, true
 	}
 
