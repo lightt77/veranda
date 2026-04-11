@@ -24,7 +24,7 @@ const (
 )
 
 // ContentAreaHeight is the fixed height of the content viewport at the bottom
-const ContentAreaHeight = 10
+const ContentAreaHeight = 15
 
 // Model represents the TUI state
 type Model struct {
