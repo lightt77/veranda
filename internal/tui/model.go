@@ -24,7 +24,19 @@ const (
 )
 
 // ContentAreaHeight is the fixed height of the content viewport at the bottom
-const ContentAreaHeight = 15
+const ContentAreaHeight = 10
+
+// ScrollableContentHeight is the height of the scrollable content area (ContentAreaHeight - tabs - status - help - cmd)
+const ScrollableContentHeight = 6
+
+// StatusMessageTimeout is how long status messages remain visible
+const StatusMessageTimeout = 3 * time.Second
+
+// statusMessage represents a queued status message
+type statusMessage struct {
+	text      string
+	timestamp time.Time
+}
 
 // Model represents the TUI state
 type Model struct {
@@ -36,6 +48,11 @@ type Model struct {
 
 	// Content viewport scroll position (resets on tab switch)
 	contentScrollOffset int
+
+	// Status message queue for L8
+	statusMessageQueue []statusMessage
+	currentStatusMsg   string
+	statusMsgExpiry    time.Time
 
 	// Debug mode for diagnostics
 	debugMode bool
