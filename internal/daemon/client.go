@@ -69,6 +69,10 @@ func decodeJSON(resp *http.Response, target interface{}) error {
 		}
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, errResp["error"])
 	}
+	// Handle 204 No Content - no body to decode
+	if resp.StatusCode == http.StatusNoContent {
+		return nil
+	}
 	return json.NewDecoder(resp.Body).Decode(target)
 }
 

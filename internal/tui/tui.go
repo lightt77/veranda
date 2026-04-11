@@ -136,7 +136,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				newM.adjustScrollForSelection()
 				return newM, nil
 			} else if m.activeTab == 0 {
-				m.navigateTimersStopwatches(-1)
+				// Navigate timers/stopwatches up
+				if m.activeColumn == 0 && m.showTimers {
+					visibleTimers := m.getVisibleTimers()
+					if len(visibleTimers) > 0 && m.timerSelectedIdx > 0 {
+						m.timerSelectedIdx--
+					}
+				} else if m.activeColumn == 1 && m.showStopwatches {
+					visibleStopwatches := m.getVisibleStopwatches()
+					if len(visibleStopwatches) > 0 && m.stopwatchSelectedIdx > 0 {
+						m.stopwatchSelectedIdx--
+					}
+				}
 				m.adjustScrollForSelection()
 			} else if m.activeTab == 2 {
 				// Skyfield tab navigation
@@ -156,7 +167,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				newM.adjustScrollForSelection()
 				return newM, nil
 			} else if m.activeTab == 0 {
-				m.navigateTimersStopwatches(1)
+				// Navigate timers/stopwatches down
+				if m.activeColumn == 0 && m.showTimers {
+					visibleTimers := m.getVisibleTimers()
+					if m.timerSelectedIdx < len(visibleTimers)-1 {
+						m.timerSelectedIdx++
+					}
+				} else if m.activeColumn == 1 && m.showStopwatches {
+					visibleStopwatches := m.getVisibleStopwatches()
+					if m.stopwatchSelectedIdx < len(visibleStopwatches)-1 {
+						m.stopwatchSelectedIdx++
+					}
+				}
 				m.adjustScrollForSelection()
 			} else if m.activeTab == 2 {
 				// Skyfield tab navigation
@@ -245,11 +267,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Toggle showing completed/archived items
 			if m.activeTab == 0 {
 				m.showCompleted = !m.showCompleted
-				// Reset selections
+				// Reset selections and scroll
 				m.timerSelectedIdx = 0
 				m.stopwatchSelectedIdx = 0
-				m.timerScrollOffset = 0
-				m.stopwatchScrollOffset = 0
+				m.contentScrollOffset = 0
 			}
 		case "t":
 			if m.activeTab == 0 {
@@ -258,7 +279,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if !m.showTimers && !m.showStopwatches {
 					m.showStopwatches = true // Ensure at least one is visible
 				}
-				m.activeColumn = 0
+				// Set active column based on what's visible
+				if m.showTimers {
+					m.activeColumn = 0
+				} else if m.showStopwatches {
+					m.activeColumn = 1
+				}
 			} else if m.activeTab == 1 {
 				// Test toggle for ambience sound - use async command
 				if err := m.initTestAudioPlayer(); err != nil {
@@ -275,7 +301,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if !m.showTimers && !m.showStopwatches {
 					m.showTimers = true // Ensure at least one is visible
 				}
-				m.activeColumn = 1
+				// Set active column based on what's visible
+				if m.showStopwatches {
+					m.activeColumn = 1
+				} else if m.showTimers {
+					m.activeColumn = 0
+				}
 			}
 		case "/":
 			// Enter command mode
@@ -869,84 +900,6 @@ func (m Model) renderStopwatches() string {
 	return content
 }
 
-// renderTimersStopwatches renders the combined timer and stopwatch list
-// Shows max 3 rows per section with scrolling, supports 1 or 2 column layout
-func (m Model) renderTimersStopwatches() string {
-	var content string
-
-	// Header
-	content += "Timers/Stopwatches\n\n"
-
-	// Handle different view modes
-	if !m.showTimers && !m.showStopwatches {
-		return content + lipgloss.NewStyle().Foreground(overlay0).Render("Press 't' to show timers or 's' to show stopwatches") + "\n"
-	}
-
-	// Get visible items
-	visibleTimers := m.getVisibleTimers()
-	visibleStopwatches := m.getVisibleStopwatches()
-
-	// Single column layout (only one section visible)
-	if (m.showTimers && !m.showStopwatches) || (!m.showTimers && m.showStopwatches) {
-		if m.showTimers {
-			content += m.renderTimersSection(visibleTimers, true)
-		} else {
-			content += m.renderStopwatchesSection(visibleStopwatches, true)
-		}
-	} else {
-		// Two column layout (both visible)
-		// Render side by side
-		timersContent := m.renderTimersSection(visibleTimers, false)
-		stopwatchesContent := m.renderStopwatchesSection(visibleStopwatches, false)
-
-		// Split into lines and combine side by side
-		timersLines := strings.Split(timersContent, "\n")
-		stopwatchLines := strings.Split(stopwatchesContent, "\n")
-
-		maxLines := max(len(timersLines), len(stopwatchLines))
-		for i := 0; i < maxLines; i++ {
-			timerLine := ""
-			if i < len(timersLines) {
-				timerLine = timersLines[i]
-			}
-			stopwatchLine := ""
-			if i < len(stopwatchLines) {
-				stopwatchLine = stopwatchLines[i]
-			}
-
-			// Pad timer line to consistent width (45 chars to accommodate progress bars)
-			padding := 45 - len(timerLine)
-			if padding < 0 {
-				padding = 0
-			}
-
-			content += timerLine + strings.Repeat(" ", padding) + stopwatchLine + "\n"
-		}
-	}
-
-	// Show toggle status line at the bottom
-	timersStatus := "off"
-	if m.showTimers {
-		timersStatus = "on"
-	}
-	stopwatchesStatus := "off"
-	if m.showStopwatches {
-		stopwatchesStatus = "on"
-	}
-	completedStatus := "hidden"
-	if m.showCompleted {
-		completedStatus = "shown"
-	}
-
-	content += "\n" + lipgloss.NewStyle().Foreground(overlay0).Render(
-		fmt.Sprintf("[t]timers:%s [s]stopwatches:%s [h]completed:%s",
-			lipgloss.NewStyle().Foreground(mauve).Render(timersStatus),
-			lipgloss.NewStyle().Foreground(mauve).Render(stopwatchesStatus),
-			lipgloss.NewStyle().Foreground(mauve).Render(completedStatus))) + "\n"
-
-	return content
-}
-
 // getVisibleTimers returns filtered timers based on showCompleted setting
 func (m Model) getVisibleTimers() []map[string]interface{} {
 	var visible []map[string]interface{}
@@ -963,238 +916,6 @@ func (m Model) getVisibleTimers() []map[string]interface{} {
 // getVisibleStopwatches returns all non-deleted stopwatches
 func (m Model) getVisibleStopwatches() []map[string]interface{} {
 	return m.stopwatches
-}
-
-// renderTimersSection renders the timers section (max 3 visible rows with scrolling)
-func (m Model) renderTimersSection(timers []map[string]interface{}, fullWidth bool) string {
-	var content string
-
-	// Header
-	content += lipgloss.NewStyle().Foreground(mauve).Bold(true).Render("Timers") + "\n"
-
-	if len(timers) == 0 {
-		content += lipgloss.NewStyle().Foreground(overlay0).Render("  No timers. Use /t to create") + "\n"
-		return content
-	}
-
-	// Calculate scroll window (max 3 rows visible)
-	const maxVisible = 3
-	totalTimers := len(timers)
-	startIdx := m.timerScrollOffset
-	if startIdx > totalTimers-maxVisible {
-		startIdx = max(0, totalTimers-maxVisible)
-	}
-	endIdx := min(startIdx+maxVisible, totalTimers)
-
-	// Show scroll indicator if needed
-	if startIdx > 0 {
-		content += lipgloss.NewStyle().Foreground(overlay0).Render("  ↑ more") + "\n"
-	}
-
-	// Render visible timers
-	for i := startIdx; i < endIdx; i++ {
-		t := timers[i]
-		label := t["label"].(string)
-		status := t["status"].(string)
-
-		// Selection indicator (only if this column is active)
-		selected := "  "
-		if m.activeColumn == 0 && i == m.timerSelectedIdx {
-			selected = selectedStyle.Render("> ")
-		}
-
-		statusIcon := "○"
-		statusStyle := inactiveTabStyle
-
-		switch status {
-		case "running":
-			statusIcon = "▶"
-			statusStyle = runningStyle
-		case "paused":
-			statusIcon = "⏸"
-			statusStyle = pausedStyle
-		case "completed":
-			statusIcon = "✓"
-			statusStyle = completedStyle
-		}
-
-		// Get time info
-		var remainingMs int64
-		if curr, ok := t["current_remaining_ms"]; ok {
-			remainingMs = int64(curr.(float64))
-		} else {
-			remainingMs = int64(t["remaining_ms"].(float64))
-		}
-		durationMs := int64(t["duration_ms"].(float64))
-
-		remainingTime := formatDuration(remainingMs)
-		totalTime := formatDuration(durationMs)
-
-		// Get progress
-		var progress float64
-		if p, ok := t["progress"]; ok {
-			progress = p.(float64)
-		}
-
-		// Build progress bar
-		progressBar := renderProgressBar(progress, 15)
-		percent := int(progress * 100)
-
-		content += fmt.Sprintf("%s%s %s\n",
-			selected,
-			statusStyle.Render(statusIcon),
-			label,
-		)
-		content += fmt.Sprintf("    %s / %s %s %d%%\n",
-			remainingStyle.Render(remainingTime),
-			totalTime,
-			progressBar,
-			percent,
-		)
-	}
-
-	// Show scroll indicator if more below
-	if endIdx < totalTimers {
-		content += lipgloss.NewStyle().Foreground(overlay0).Render("  ↓ more") + "\n"
-	}
-
-	return content
-}
-
-// renderStopwatchesSection renders the stopwatches section (max 3 visible rows with scrolling)
-func (m Model) renderStopwatchesSection(stopwatches []map[string]interface{}, fullWidth bool) string {
-	var content string
-
-	// Header
-	content += lipgloss.NewStyle().Foreground(mauve).Bold(true).Render("Stopwatches") + "\n"
-
-	if len(stopwatches) == 0 {
-		content += lipgloss.NewStyle().Foreground(overlay0).Render("  No stopwatches. Use /s to create") + "\n"
-		return content
-	}
-
-	// Calculate scroll window (max 3 rows visible)
-	const maxVisible = 3
-	totalStopwatches := len(stopwatches)
-	startIdx := m.stopwatchScrollOffset
-	if startIdx > totalStopwatches-maxVisible {
-		startIdx = max(0, totalStopwatches-maxVisible)
-	}
-	endIdx := min(startIdx+maxVisible, totalStopwatches)
-
-	// Show scroll indicator if needed
-	if startIdx > 0 {
-		content += lipgloss.NewStyle().Foreground(overlay0).Render("  ↑ more") + "\n"
-	}
-
-	now := time.Now()
-
-	// Render visible stopwatches
-	for i := startIdx; i < endIdx; i++ {
-		sw := stopwatches[i]
-		label := sw["label"].(string)
-		status := sw["status"].(string)
-
-		// Selection indicator (only if this column is active)
-		selected := "  "
-		if m.activeColumn == 1 && i == m.stopwatchSelectedIdx {
-			selected = selectedStyle.Render("> ")
-		}
-
-		statusIcon := "○"
-		statusStyle := inactiveTabStyle
-
-		if status == "running" {
-			statusIcon = "▶"
-			statusStyle = runningStyle
-		}
-
-		// Get elapsed time
-		var elapsedMs int64
-		if status == "running" {
-			if startedAt, ok := sw["started_at_ms"]; ok && startedAt != nil {
-				startedAtMs := int64(startedAt.(float64))
-				baseElapsed := int64(sw["elapsed_ms"].(float64))
-				elapsedMs = baseElapsed + now.UnixMilli() - startedAtMs
-			} else {
-				elapsedMs = int64(sw["elapsed_ms"].(float64))
-			}
-		} else {
-			elapsedMs = int64(sw["elapsed_ms"].(float64))
-		}
-
-		elapsedStr := formatStopwatch(elapsedMs)
-
-		content += fmt.Sprintf("%s%s %s %s\n",
-			selected,
-			statusStyle.Render(statusIcon),
-			label,
-			elapsedStr,
-		)
-	}
-
-	// Show scroll indicator if more below
-	if endIdx < totalStopwatches {
-		content += lipgloss.NewStyle().Foreground(overlay0).Render("  ↓ more") + "\n"
-	}
-
-	return content
-}
-
-// navigateTimersStopwatches handles navigation within the timers/stopwatches tab
-// delta: -1 for up, 1 for down
-func (m *Model) navigateTimersStopwatches(delta int) {
-	if m.activeColumn == 0 && m.showTimers {
-		// Navigate timers
-		visibleTimers := m.getVisibleTimers()
-		if len(visibleTimers) == 0 {
-			return
-		}
-
-		newIdx := m.timerSelectedIdx + delta
-		if newIdx < 0 {
-			newIdx = 0
-		}
-		if newIdx >= len(visibleTimers) {
-			newIdx = len(visibleTimers) - 1
-		}
-
-		m.timerSelectedIdx = newIdx
-
-		// Update scroll offset to keep selection visible
-		const maxVisible = 3
-		if m.timerSelectedIdx < m.timerScrollOffset {
-			m.timerScrollOffset = m.timerSelectedIdx
-		}
-		if m.timerSelectedIdx >= m.timerScrollOffset+maxVisible {
-			m.timerScrollOffset = m.timerSelectedIdx - maxVisible + 1
-		}
-	} else if m.activeColumn == 1 && m.showStopwatches {
-		// Navigate stopwatches
-		visibleStopwatches := m.getVisibleStopwatches()
-		if len(visibleStopwatches) == 0 {
-			return
-		}
-
-		newIdx := m.stopwatchSelectedIdx + delta
-		if newIdx < 0 {
-			newIdx = 0
-		}
-		if newIdx >= len(visibleStopwatches) {
-			newIdx = len(visibleStopwatches) - 1
-		}
-
-		m.stopwatchSelectedIdx = newIdx
-
-		// Update scroll offset to keep selection visible
-		const maxVisible = 3
-		if m.stopwatchSelectedIdx < m.stopwatchScrollOffset {
-			m.stopwatchScrollOffset = m.stopwatchSelectedIdx
-		}
-		if m.stopwatchSelectedIdx >= m.stopwatchScrollOffset+maxVisible {
-			m.stopwatchScrollOffset = m.stopwatchSelectedIdx - maxVisible + 1
-		}
-	}
 }
 
 // handleTimersStopwatchesToggle handles pause/resume for the selected timer or stopwatch
@@ -1577,44 +1298,62 @@ func (m *Model) adjustScrollForSelection() {
 // getSelectedItemLine returns the line number of the currently selected item
 // Returns -1 if not found or not applicable for current tab
 func (m Model) getSelectedItemLine() int {
-	var content string
 	switch m.activeTab {
 	case 0:
-		content = m.renderTimersStopwatchesContent()
+		// Timers/Stopwatches - use column-specific navigation
+		return m.getTimersStopwatchesSelectedLine()
 	case 1:
-		content = m.renderAmbienceContent()
+		// Ambience tab - items start after header
+		// Header is 3 lines: status line, empty line, empty line
+		// Items start at line 2, one item per line
+		if !m.userConfig.AmbienceEnabled {
+			return -1 // No scrolling when disabled
+		}
+		if m.ambienceSelectedIdx >= len(m.ambienceDisplayOrder) {
+			return -1
+		}
+		return 2 + m.ambienceSelectedIdx
 	case 2:
-		content = m.renderSkyfieldContent()
+		// Skyfield tab - 3 items at fixed positions
+		if m.skyfieldSelectedIdx >= 0 && m.skyfieldSelectedIdx < 3 {
+			return m.skyfieldSelectedIdx
+		}
+		return -1
 	case 3:
-		content = m.renderPrefsContent()
+		// Prefs tab - selection only when choosing sound file
+		if m.selectingSoundFile && m.selectedSoundIdx < len(m.availableSoundFiles) {
+			// Header takes 2 lines, then items start
+			return 2 + m.selectedSoundIdx
+		}
+		return -1
 	default:
 		return -1
 	}
+}
 
-	lines := strings.Split(content, "\n")
-
-	// Find which line contains the selection indicator (" > ")
-	for i, line := range lines {
-		// Check for selection indicator at start of line
-		if strings.HasPrefix(line, "> ") || strings.Contains(line, " > ") {
-			// For ambience tab, check if this matches the selected index
-			if m.activeTab == 1 {
-				// Count how many items appear before this line
-				itemCount := 0
-				for j := 0; j < i; j++ {
-					if strings.Contains(lines[j], "[") && strings.Contains(lines[j], "]") {
-						itemCount++
-					}
-				}
-				if itemCount == m.ambienceSelectedIdx {
-					return i
-				}
-			} else {
-				return i
-			}
+// getTimersStopwatchesSelectedLine returns the line number for timer/stopwatch selection
+// Each timer takes 2 lines, each stopwatch takes 1 line
+// Header is line 0, items start at line 1
+func (m Model) getTimersStopwatchesSelectedLine() int {
+	// Single column layout - timers only
+	if m.showTimers && !m.showStopwatches {
+		if m.timerSelectedIdx < 0 {
+			return -1
 		}
+		// Header at line 0, each timer takes 2 lines, selection is on first line of each timer
+		return 1 + (m.timerSelectedIdx * 2)
 	}
 
+	// Single column layout - stopwatches only
+	if !m.showTimers && m.showStopwatches {
+		if m.stopwatchSelectedIdx < 0 {
+			return -1
+		}
+		// Header at line 0, each stopwatch takes 1 line
+		return 1 + m.stopwatchSelectedIdx
+	}
+
+	// Two column layout - not handled here, selection tracking is per-column
 	return -1
 }
 
@@ -1923,22 +1662,8 @@ func (m Model) renderTimersSectionContent(timers []map[string]interface{}, fullW
 		return content
 	}
 
-	// Calculate scroll window (max 3 rows visible)
-	const maxVisible = 3
-	totalTimers := len(timers)
-	startIdx := m.timerScrollOffset
-	if startIdx > totalTimers-maxVisible {
-		startIdx = max(0, totalTimers-maxVisible)
-	}
-	endIdx := min(startIdx+maxVisible, totalTimers)
-
-	// Show scroll indicator if needed
-	if startIdx > 0 {
-		content += lipgloss.NewStyle().Foreground(overlay0).Render("  ↑ more") + "\n"
-	}
-
-	// Render visible timers
-	for i := startIdx; i < endIdx; i++ {
+	// Render all timers (no internal scrolling - main viewport handles scrolling)
+	for i := 0; i < len(timers); i++ {
 		t := timers[i]
 		label := t["label"].(string)
 		status := t["status"].(string)
@@ -1999,11 +1724,6 @@ func (m Model) renderTimersSectionContent(timers []map[string]interface{}, fullW
 		)
 	}
 
-	// Show scroll indicator if more below
-	if endIdx < totalTimers {
-		content += lipgloss.NewStyle().Foreground(overlay0).Render("  ↓ more") + "\n"
-	}
-
 	return content
 }
 
@@ -2019,24 +1739,9 @@ func (m Model) renderStopwatchesSectionContent(stopwatches []map[string]interfac
 		return content
 	}
 
-	// Calculate scroll window (max 3 rows visible)
-	const maxVisible = 3
-	totalStopwatches := len(stopwatches)
-	startIdx := m.stopwatchScrollOffset
-	if startIdx > totalStopwatches-maxVisible {
-		startIdx = max(0, totalStopwatches-maxVisible)
-	}
-	endIdx := min(startIdx+maxVisible, totalStopwatches)
-
-	// Show scroll indicator if needed
-	if startIdx > 0 {
-		content += lipgloss.NewStyle().Foreground(overlay0).Render("  ↑ more") + "\n"
-	}
-
+	// Render all stopwatches (no internal scrolling - main viewport handles scrolling)
 	now := time.Now()
-
-	// Render visible stopwatches
-	for i := startIdx; i < endIdx; i++ {
+	for i := 0; i < len(stopwatches); i++ {
 		sw := stopwatches[i]
 		label := sw["label"].(string)
 		status := sw["status"].(string)
@@ -2077,11 +1782,6 @@ func (m Model) renderStopwatchesSectionContent(stopwatches []map[string]interfac
 			label,
 			elapsedStr,
 		)
-	}
-
-	// Show scroll indicator if more below
-	if endIdx < totalStopwatches {
-		content += lipgloss.NewStyle().Foreground(overlay0).Render("  ↓ more") + "\n"
 	}
 
 	return content

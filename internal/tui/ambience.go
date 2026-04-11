@@ -222,7 +222,7 @@ func (m *Model) adjustAmbienceVolume(delta float64) {
 
 // toggleAmbienceGlobal toggles the global ambience sounds on/off
 func (m *Model) toggleAmbienceGlobal() {
-	fmt.Printf("[TUI] Toggling ambience from %v to %v\n", m.userConfig.AmbienceEnabled, !m.userConfig.AmbienceEnabled)
+	// Debug: fmt.Printf("[TUI] Toggling ambience from %v to %v\n", m.userConfig.AmbienceEnabled, !m.userConfig.AmbienceEnabled)
 	m.userConfig.AmbienceEnabled = !m.userConfig.AmbienceEnabled
 	// Auto-save the change
 	m.saveAmbienceSettings()
