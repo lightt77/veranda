@@ -353,7 +353,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// View renders the TUI with fixed content area at bottom
+// View renders the TUI with fixed content area at bottom (10 lines)
+// Layout: L1=tabs, L2-7=scrollable content (6 lines), L8=status, L9=help, L10=command
 func (m Model) View() string {
 	if !m.client.IsRunning() {
 		return "\n  ⚠️  Daemon is not running.\n\n  Start it with: veranda daemon\n\n  Press 'q' to quit.\n"
@@ -385,68 +386,15 @@ func (m Model) View() string {
 		starfieldStr = m.renderRandomStarfield(starfieldHeight)
 	}
 
-	// Render content in fixed viewport
-	contentViewport := m.renderContentViewport()
+	// Build content area (exactly 10 lines)
+	tabs := m.renderTabs()                     // L1
+	scrollable := m.renderScrollableViewport() // L2-7 (6 lines)
+	statusMsg := m.renderStatusMessageLine()   // L8
+	help := m.renderHelpLine()                 // L9
+	cmdLine := m.renderCommandLine()           // L10
 
-	// Join starfield and content
-	return starfieldStr + "\n" + contentViewport
-}
-
-// renderContentViewport renders content in a fixed-height viewport with internal scrolling
-func (m Model) renderContentViewport() string {
-	// Get full content for current tab
-	var fullContent string
-	switch m.activeTab {
-	case 0:
-		fullContent = m.renderTimersStopwatches()
-	case 1:
-		fullContent = m.renderAmbience()
-	case 2:
-		fullContent = m.renderSkyfield()
-	case 3:
-		fullContent = m.renderPrefs()
-	}
-
-	lines := strings.Split(fullContent, "\n")
-	totalLines := len(lines)
-
-	// If content fits in viewport (<=10 lines): bottom-align it
-	if totalLines <= ContentAreaHeight {
-		// Pad with empty lines at top to push content to bottom
-		padding := ContentAreaHeight - totalLines
-		paddedLines := make([]string, padding)
-		for i := 0; i < padding; i++ {
-			paddedLines[i] = ""
-		}
-		paddedLines = append(paddedLines, lines...)
-		return strings.Join(paddedLines, "\n")
-	}
-
-	// Content exceeds viewport: show scrolled window with indicators
-	startIdx := m.contentScrollOffset
-	endIdx := startIdx + ContentAreaHeight
-
-	// Clamp to valid range
-	if endIdx > totalLines {
-		endIdx = totalLines
-		startIdx = totalLines - ContentAreaHeight
-	}
-	if startIdx < 0 {
-		startIdx = 0
-	}
-
-	// Extract visible lines
-	visibleLines := lines[startIdx:endIdx]
-
-	// Add scroll indicators
-	if startIdx > 0 {
-		visibleLines[0] = "↑ " + strings.TrimPrefix(visibleLines[0], "↑ ")
-	}
-	if endIdx < totalLines {
-		visibleLines[ContentAreaHeight-1] = "↓ more items"
-	}
-
-	return strings.Join(visibleLines, "\n")
+	// Combine: starfield + newline + 10 content lines
+	return starfieldStr + "\n" + tabs + "\n" + scrollable + "\n" + statusMsg + "\n" + help + "\n" + cmdLine
 }
 
 // renderStarfield renders the appropriate starfield
@@ -755,168 +703,6 @@ func (m *Model) searchCities() {
 
 	m.cityPickerCities = cities
 	m.cityPickerIndex = 0
-}
-
-// renderContent renders the content at bottom-left
-func (m Model) renderContent() string {
-	var s string
-	paddingLeft := 2
-	paddingBottom := 0
-
-	// Add bottom padding (empty lines)
-	for i := 0; i < paddingBottom; i++ {
-		s += "\n"
-	}
-
-	// Add left padding
-	leftPad := strings.Repeat(" ", paddingLeft)
-
-	// Title
-	s += leftPad + titleStyle.Render("⏱️  Veranda") + "\n"
-
-	// Tabs - now 4 tabs: timers/stopwatches, ambience, skyfield, prefs
-	timersStopwatchesTab := inactiveTabStyle.Render("Timers/Stopwatches")
-	ambienceTab := inactiveTabStyle.Render("Ambience")
-	skyfieldTab := inactiveTabStyle.Render("Skyfield")
-	prefsTab := inactiveTabStyle.Render("Prefs")
-
-	switch m.activeTab {
-	case 0:
-		timersStopwatchesTab = activeTabStyle.Render("Timers/Stopwatches")
-	case 1:
-		ambienceTab = activeTabStyle.Render("Ambience")
-	case 2:
-		skyfieldTab = activeTabStyle.Render("Skyfield")
-	case 3:
-		prefsTab = activeTabStyle.Render("Prefs")
-	}
-
-	s += leftPad + lipgloss.JoinHorizontal(lipgloss.Left, timersStopwatchesTab, ambienceTab, skyfieldTab, prefsTab) + "\n"
-
-	// Content
-	var contentStr string
-	if m.err != nil {
-		contentStr = fmt.Sprintf("Error: %v\n", m.err)
-	} else {
-		switch m.activeTab {
-		case 0:
-			contentStr = m.renderTimersStopwatches()
-		case 1:
-			contentStr = m.renderAmbience()
-		case 2:
-			contentStr = m.renderSkyfield()
-		case 3:
-			contentStr = m.renderPrefs()
-		}
-	}
-
-	s += leftPad + strings.ReplaceAll(contentStr, "\n", "\n"+leftPad)
-
-	// Status line - simplified since mode/location/names moved to skyfield tab
-	statusLine := lipgloss.NewStyle().Foreground(overlay0).Render(
-		fmt.Sprintf("veranda %s | ", config.AppVersion),
-	)
-
-	// Help - different based on active tab
-	var helpText string
-	switch m.activeTab {
-	case 1:
-		// Ambience tab
-		if m.editingAmbienceVolume {
-			helpText = lipgloss.NewStyle().Foreground(mauve).Render("0-9") +
-				lipgloss.NewStyle().Foreground(overlay0).Render("/↑↓:volume ") +
-				lipgloss.NewStyle().Foreground(mauve).Render("enter/esc") +
-				lipgloss.NewStyle().Foreground(overlay0).Render(":done")
-		} else {
-			helpText = lipgloss.NewStyle().Foreground(mauve).Render("↑↓") +
-				lipgloss.NewStyle().Foreground(overlay0).Render("/jk:select ") +
-				lipgloss.NewStyle().Foreground(mauve).Render("space") +
-				lipgloss.NewStyle().Foreground(overlay0).Render(":toggle ") +
-				lipgloss.NewStyle().Foreground(mauve).Render("t") +
-				lipgloss.NewStyle().Foreground(overlay0).Render(":test ") +
-				lipgloss.NewStyle().Foreground(mauve).Render("v") +
-				lipgloss.NewStyle().Foreground(overlay0).Render(":vol ") +
-				lipgloss.NewStyle().Foreground(mauve).Render("r") +
-				lipgloss.NewStyle().Foreground(overlay0).Render(":reset")
-		}
-	case 2:
-		// Skyfield tab
-		helpText = lipgloss.NewStyle().Foreground(mauve).Render("↑↓") +
-			lipgloss.NewStyle().Foreground(overlay0).Render(":select ") +
-			lipgloss.NewStyle().Foreground(mauve).Render("←/→") +
-			lipgloss.NewStyle().Foreground(overlay0).Render(":mode ") +
-			lipgloss.NewStyle().Foreground(mauve).Render("space") +
-			lipgloss.NewStyle().Foreground(overlay0).Render(":names ") +
-			lipgloss.NewStyle().Foreground(mauve).Render("l") +
-			lipgloss.NewStyle().Foreground(overlay0).Render(":location ") +
-			lipgloss.NewStyle().Foreground(mauve).Render("tab") +
-			lipgloss.NewStyle().Foreground(overlay0).Render(":switch ") +
-			lipgloss.NewStyle().Foreground(mauve).Render("q") +
-			lipgloss.NewStyle().Foreground(overlay0).Render(":quit")
-	case 3:
-		// Preferences tab
-		if m.selectingSoundFile {
-			helpText = lipgloss.NewStyle().Foreground(mauve).Render("↑↓") +
-				lipgloss.NewStyle().Foreground(overlay0).Render("/jk:select ") +
-				lipgloss.NewStyle().Foreground(mauve).Render("enter") +
-				lipgloss.NewStyle().Foreground(overlay0).Render(":confirm ") +
-				lipgloss.NewStyle().Foreground(mauve).Render("esc") +
-				lipgloss.NewStyle().Foreground(overlay0).Render(":cancel")
-		} else if m.editingChimeVolume {
-			helpText = lipgloss.NewStyle().Foreground(mauve).Render("0-9") +
-				lipgloss.NewStyle().Foreground(overlay0).Render("/↑↓:volume ") +
-				lipgloss.NewStyle().Foreground(mauve).Render("enter/esc") +
-				lipgloss.NewStyle().Foreground(overlay0).Render(":done")
-		} else {
-			helpText = lipgloss.NewStyle().Foreground(mauve).Render("e") +
-				lipgloss.NewStyle().Foreground(overlay0).Render(":chime ") +
-				lipgloss.NewStyle().Foreground(mauve).Render("v") +
-				lipgloss.NewStyle().Foreground(overlay0).Render(":chime-vol ") +
-				lipgloss.NewStyle().Foreground(mauve).Render("tab") +
-				lipgloss.NewStyle().Foreground(overlay0).Render(":switch ") +
-				lipgloss.NewStyle().Foreground(mauve).Render("q") +
-				lipgloss.NewStyle().Foreground(overlay0).Render(":quit")
-		}
-	default:
-		if m.commandMode {
-			// Command mode
-			helpText = lipgloss.NewStyle().Foreground(mauve).Render("enter") +
-				lipgloss.NewStyle().Foreground(overlay0).Render(":execute ") +
-				lipgloss.NewStyle().Foreground(mauve).Render("esc") +
-				lipgloss.NewStyle().Foreground(overlay0).Render(":cancel")
-		} else {
-			// Timers/Stopwatches tab
-			helpText = lipgloss.NewStyle().Foreground(mauve).Render("↑↓") +
-				lipgloss.NewStyle().Foreground(overlay0).Render(":navigate ") +
-				lipgloss.NewStyle().Foreground(mauve).Render("←/→") +
-				lipgloss.NewStyle().Foreground(overlay0).Render(":column ") +
-				lipgloss.NewStyle().Foreground(mauve).Render("space/p") +
-				lipgloss.NewStyle().Foreground(overlay0).Render(":pause ") +
-				lipgloss.NewStyle().Foreground(mauve).Render("d") +
-				lipgloss.NewStyle().Foreground(overlay0).Render(":delete ") +
-				lipgloss.NewStyle().Foreground(mauve).Render("tab") +
-				lipgloss.NewStyle().Foreground(overlay0).Render(":switch ") +
-				lipgloss.NewStyle().Foreground(mauve).Render("t/s/h") +
-				lipgloss.NewStyle().Foreground(overlay0).Render(":toggle ") +
-				lipgloss.NewStyle().Foreground(mauve).Render("/") +
-				lipgloss.NewStyle().Foreground(overlay0).Render(":command ") +
-				lipgloss.NewStyle().Foreground(mauve).Render("q") +
-				lipgloss.NewStyle().Foreground(overlay0).Render(":quit")
-		}
-	}
-
-	// Show command mode input line if active
-	if m.commandMode {
-		cmdLine := lipgloss.NewStyle().Foreground(mauve).Render(":"+m.commandInput) + "_"
-		if m.commandError != "" {
-			cmdLine += " " + lipgloss.NewStyle().Foreground(red).Render(m.commandError)
-		}
-		s += leftPad + cmdLine + "\n"
-	}
-
-	s += leftPad + statusLine + helpText + "\n"
-
-	return s
 }
 
 // renderTimers renders the timer list
@@ -1779,8 +1565,8 @@ func (m *Model) adjustScrollForSelection() {
 	}
 
 	// If selected item is below viewport, scroll down
-	if selectedLine >= m.contentScrollOffset+ContentAreaHeight {
-		m.contentScrollOffset = selectedLine - ContentAreaHeight + 1
+	if selectedLine >= m.contentScrollOffset+ScrollableContentHeight {
+		m.contentScrollOffset = selectedLine - ScrollableContentHeight + 1
 	}
 
 	// Clamp to valid range
@@ -1799,13 +1585,13 @@ func (m Model) getSelectedItemLine() int {
 	var content string
 	switch m.activeTab {
 	case 0:
-		content = m.renderTimersStopwatches()
+		content = m.renderTimersStopwatchesContent()
 	case 1:
-		content = m.renderAmbience()
+		content = m.renderAmbienceContent()
 	case 2:
-		content = m.renderSkyfield()
+		content = m.renderSkyfieldContent()
 	case 3:
-		content = m.renderPrefs()
+		content = m.renderPrefsContent()
 	default:
 		return -1
 	}
@@ -1837,27 +1623,27 @@ func (m Model) getSelectedItemLine() int {
 	return -1
 }
 
-// getMaxContentScrollOffset returns the maximum valid scroll offset for current tab
+// getMaxContentScrollOffset returns the maximum valid scroll offset for scrollable content
 func (m Model) getMaxContentScrollOffset() int {
 	var content string
 	switch m.activeTab {
 	case 0:
-		content = m.renderTimersStopwatches()
+		content = m.renderTimersStopwatchesContent()
 	case 1:
-		content = m.renderAmbience()
+		content = m.renderAmbienceContent()
 	case 2:
-		content = m.renderSkyfield()
+		content = m.renderSkyfieldContent()
 	case 3:
-		content = m.renderPrefs()
+		content = m.renderPrefsContent()
 	}
 
 	lines := strings.Split(content, "\n")
 	totalLines := len(lines)
 
-	if totalLines <= ContentAreaHeight {
+	if totalLines <= ScrollableContentHeight {
 		return 0
 	}
-	return totalLines - ContentAreaHeight
+	return totalLines - ScrollableContentHeight
 }
 
 // Run starts the TUI
@@ -1865,4 +1651,644 @@ func Run(port int, citiesRepo *repository.CitiesRepository, settingsRepo config.
 	p := tea.NewProgram(New(port, citiesRepo, settingsRepo), tea.WithAltScreen())
 	_, err := p.Run()
 	return err
+}
+
+// renderTabs renders the tab bar (1 line)
+func (m Model) renderTabs() string {
+	timersStopwatchesTab := inactiveTabStyle.Render("Timers")
+	ambienceTab := inactiveTabStyle.Render("Ambience")
+	skyfieldTab := inactiveTabStyle.Render("Skyfield")
+	prefsTab := inactiveTabStyle.Render("Prefs")
+
+	switch m.activeTab {
+	case 0:
+		timersStopwatchesTab = activeTabStyle.Render("Timers")
+	case 1:
+		ambienceTab = activeTabStyle.Render("Ambience")
+	case 2:
+		skyfieldTab = activeTabStyle.Render("Skyfield")
+	case 3:
+		prefsTab = activeTabStyle.Render("Prefs")
+	}
+
+	return lipgloss.JoinHorizontal(lipgloss.Left, timersStopwatchesTab, ambienceTab, skyfieldTab, prefsTab)
+}
+
+// renderScrollableViewport renders the scrollable content area (exactly 6 lines)
+func (m Model) renderScrollableViewport() string {
+	// Get content for current tab
+	var content string
+	switch m.activeTab {
+	case 0:
+		content = m.renderTimersStopwatchesContent()
+	case 1:
+		content = m.renderAmbienceContent()
+	case 2:
+		content = m.renderSkyfieldContent()
+	case 3:
+		content = m.renderPrefsContent()
+	}
+
+	lines := strings.Split(content, "\n")
+	totalLines := len(lines)
+
+	// If content fits in 6 lines: show from top
+	if totalLines <= ScrollableContentHeight {
+		// Pad to exactly 6 lines
+		result := make([]string, ScrollableContentHeight)
+		for i := 0; i < ScrollableContentHeight; i++ {
+			if i < totalLines {
+				result[i] = lines[i]
+			} else {
+				result[i] = ""
+			}
+		}
+		return strings.Join(result, "\n")
+	}
+
+	// Content exceeds 6 lines: show scrolled window
+	startIdx := m.contentScrollOffset
+	endIdx := startIdx + ScrollableContentHeight
+
+	// Clamp to valid range
+	if endIdx > totalLines {
+		endIdx = totalLines
+		startIdx = totalLines - ScrollableContentHeight
+	}
+	if startIdx < 0 {
+		startIdx = 0
+	}
+
+	// Extract visible lines
+	visibleLines := lines[startIdx:endIdx]
+
+	// Ensure exactly 6 lines
+	if len(visibleLines) < ScrollableContentHeight {
+		padding := make([]string, ScrollableContentHeight-len(visibleLines))
+		visibleLines = append(visibleLines, padding...)
+	}
+
+	return strings.Join(visibleLines, "\n")
+}
+
+// renderStatusMessageLine renders the status message line (L8)
+func (m Model) renderStatusMessageLine() string {
+	// Check if current message has expired
+	if m.currentStatusMsg != "" && time.Now().After(m.statusMsgExpiry) {
+		m.currentStatusMsg = ""
+	}
+
+	// If no current message, check queue
+	if m.currentStatusMsg == "" && len(m.statusMessageQueue) > 0 {
+		msg := m.statusMessageQueue[0]
+		m.statusMessageQueue = m.statusMessageQueue[1:]
+		m.currentStatusMsg = msg.text
+		m.statusMsgExpiry = time.Now().Add(StatusMessageTimeout)
+	}
+
+	if m.currentStatusMsg != "" {
+		return lipgloss.NewStyle().Foreground(green).Render(m.currentStatusMsg)
+	}
+	return ""
+}
+
+// renderHelpLine renders the help line (L9)
+func (m Model) renderHelpLine() string {
+	switch m.activeTab {
+	case 1:
+		// Ambience tab
+		if m.editingAmbienceVolume {
+			return lipgloss.NewStyle().Foreground(mauve).Render("0-9") +
+				lipgloss.NewStyle().Foreground(overlay0).Render("/↑↓:volume ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("enter/esc") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":done")
+		}
+		return lipgloss.NewStyle().Foreground(mauve).Render("↑↓") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":select ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("space") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":toggle ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("t") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":test ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("v") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":vol ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("r") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":reset")
+	case 2:
+		// Skyfield tab
+		return lipgloss.NewStyle().Foreground(mauve).Render("↑↓") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":select ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("←/→") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":mode ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("space") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":names ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("l") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":loc")
+	case 3:
+		// Preferences tab
+		if m.selectingSoundFile {
+			return lipgloss.NewStyle().Foreground(mauve).Render("↑↓") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":select ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("enter") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":confirm ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("esc") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":cancel")
+		} else if m.editingChimeVolume {
+			return lipgloss.NewStyle().Foreground(mauve).Render("0-9") +
+				lipgloss.NewStyle().Foreground(overlay0).Render("/↑↓:volume ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("enter/esc") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":done")
+		}
+		return lipgloss.NewStyle().Foreground(mauve).Render("e") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":chime ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("v") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":chime-vol")
+	default:
+		// Timers/Stopwatches tab (tab 0)
+		if m.commandMode {
+			return lipgloss.NewStyle().Foreground(mauve).Render("enter") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":execute ") +
+				lipgloss.NewStyle().Foreground(mauve).Render("esc") +
+				lipgloss.NewStyle().Foreground(overlay0).Render(":cancel")
+		}
+		return lipgloss.NewStyle().Foreground(mauve).Render("↑↓") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":nav ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("←/→") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":column ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("space") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":pause ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("d") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":del ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("/") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":cmd")
+	}
+}
+
+// renderCommandLine renders the command line (L10) - blank or shows :command
+func (m Model) renderCommandLine() string {
+	if m.commandMode {
+		cmdLine := ":" + m.commandInput + "_"
+		if m.commandError != "" {
+			cmdLine += " " + lipgloss.NewStyle().Foreground(red).Render(m.commandError)
+		}
+		return lipgloss.NewStyle().Foreground(mauve).Render(cmdLine)
+	}
+	return ""
+}
+
+// setStatusMessage queues a status message to display on L8
+func (m *Model) setStatusMessage(msg string) {
+	m.statusMessageQueue = append(m.statusMessageQueue, statusMessage{
+		text:      msg,
+		timestamp: time.Now(),
+	})
+}
+
+// renderTimersStopwatchesContent renders content for timers/stopwatches tab (no header/footer)
+func (m Model) renderTimersStopwatchesContent() string {
+	var content string
+
+	// Handle different view modes
+	if !m.showTimers && !m.showStopwatches {
+		return lipgloss.NewStyle().Foreground(overlay0).Render("Press 't' to show timers or 's' to show stopwatches")
+	}
+
+	// Get visible items
+	visibleTimers := m.getVisibleTimers()
+	visibleStopwatches := m.getVisibleStopwatches()
+
+	// Single column layout (only one section visible)
+	if (m.showTimers && !m.showStopwatches) || (!m.showTimers && m.showStopwatches) {
+		if m.showTimers {
+			content += m.renderTimersSectionContent(visibleTimers, true)
+		} else {
+			content += m.renderStopwatchesSectionContent(visibleStopwatches, true)
+		}
+	} else {
+		// Two column layout (both visible)
+		timersContent := m.renderTimersSectionContent(visibleTimers, false)
+		stopwatchesContent := m.renderStopwatchesSectionContent(visibleStopwatches, false)
+
+		// Split into lines and combine side by side
+		timersLines := strings.Split(timersContent, "\n")
+		stopwatchLines := strings.Split(stopwatchesContent, "\n")
+
+		maxLines := max(len(timersLines), len(stopwatchLines))
+		for i := 0; i < maxLines; i++ {
+			timerLine := ""
+			if i < len(timersLines) {
+				timerLine = timersLines[i]
+			}
+			stopwatchLine := ""
+			if i < len(stopwatchLines) {
+				stopwatchLine = stopwatchLines[i]
+			}
+
+			// Pad timer line to consistent width (45 chars to accommodate progress bars)
+			padding := 45 - lipgloss.Width(timerLine)
+			if padding < 0 {
+				padding = 0
+			}
+
+			content += timerLine + strings.Repeat(" ", padding) + stopwatchLine + "\n"
+		}
+	}
+
+	// Show toggle status line at the bottom
+	timersStatus := "off"
+	if m.showTimers {
+		timersStatus = "on"
+	}
+	stopwatchesStatus := "off"
+	if m.showStopwatches {
+		stopwatchesStatus = "on"
+	}
+	completedStatus := "hidden"
+	if m.showCompleted {
+		completedStatus = "shown"
+	}
+
+	content += lipgloss.NewStyle().Foreground(overlay0).Render(
+		fmt.Sprintf("[t]timers:%s [s]stopwatches:%s [h]completed:%s",
+			lipgloss.NewStyle().Foreground(mauve).Render(timersStatus),
+			lipgloss.NewStyle().Foreground(mauve).Render(stopwatchesStatus),
+			lipgloss.NewStyle().Foreground(mauve).Render(completedStatus)))
+
+	return strings.TrimRight(content, "\n")
+}
+
+// renderTimersSectionContent renders timers section content (no header/footer)
+func (m Model) renderTimersSectionContent(timers []map[string]interface{}, fullWidth bool) string {
+	var content string
+
+	// Header
+	content += lipgloss.NewStyle().Foreground(mauve).Bold(true).Render("Timers") + "\n"
+
+	if len(timers) == 0 {
+		content += lipgloss.NewStyle().Foreground(overlay0).Render("  No timers. Use /t to create") + "\n"
+		return content
+	}
+
+	// Calculate scroll window (max 3 rows visible)
+	const maxVisible = 3
+	totalTimers := len(timers)
+	startIdx := m.timerScrollOffset
+	if startIdx > totalTimers-maxVisible {
+		startIdx = max(0, totalTimers-maxVisible)
+	}
+	endIdx := min(startIdx+maxVisible, totalTimers)
+
+	// Show scroll indicator if needed
+	if startIdx > 0 {
+		content += lipgloss.NewStyle().Foreground(overlay0).Render("  ↑ more") + "\n"
+	}
+
+	// Render visible timers
+	for i := startIdx; i < endIdx; i++ {
+		t := timers[i]
+		label := t["label"].(string)
+		status := t["status"].(string)
+
+		// Selection indicator (only if this column is active)
+		selected := "  "
+		if m.activeColumn == 0 && i == m.timerSelectedIdx {
+			selected = selectedStyle.Render("> ")
+		}
+
+		statusIcon := "○"
+		statusStyle := inactiveTabStyle
+
+		switch status {
+		case "running":
+			statusIcon = "▶"
+			statusStyle = runningStyle
+		case "paused":
+			statusIcon = "⏸"
+			statusStyle = pausedStyle
+		case "completed":
+			statusIcon = "✓"
+			statusStyle = completedStyle
+		}
+
+		// Get time info
+		var remainingMs int64
+		if curr, ok := t["current_remaining_ms"]; ok {
+			remainingMs = int64(curr.(float64))
+		} else {
+			remainingMs = int64(t["remaining_ms"].(float64))
+		}
+		durationMs := int64(t["duration_ms"].(float64))
+
+		remainingTime := formatDuration(remainingMs)
+		totalTime := formatDuration(durationMs)
+
+		// Get progress
+		var progress float64
+		if p, ok := t["progress"]; ok {
+			progress = p.(float64)
+		}
+
+		// Build progress bar
+		progressBar := renderProgressBar(progress, 15)
+		percent := int(progress * 100)
+
+		content += fmt.Sprintf("%s%s %s\n",
+			selected,
+			statusStyle.Render(statusIcon),
+			label,
+		)
+		content += fmt.Sprintf("    %s / %s %s %d%%\n",
+			remainingStyle.Render(remainingTime),
+			totalTime,
+			progressBar,
+			percent,
+		)
+	}
+
+	// Show scroll indicator if more below
+	if endIdx < totalTimers {
+		content += lipgloss.NewStyle().Foreground(overlay0).Render("  ↓ more") + "\n"
+	}
+
+	return content
+}
+
+// renderStopwatchesSectionContent renders stopwatches section content (no header/footer)
+func (m Model) renderStopwatchesSectionContent(stopwatches []map[string]interface{}, fullWidth bool) string {
+	var content string
+
+	// Header
+	content += lipgloss.NewStyle().Foreground(mauve).Bold(true).Render("Stopwatches") + "\n"
+
+	if len(stopwatches) == 0 {
+		content += lipgloss.NewStyle().Foreground(overlay0).Render("  No stopwatches. Use /s to create") + "\n"
+		return content
+	}
+
+	// Calculate scroll window (max 3 rows visible)
+	const maxVisible = 3
+	totalStopwatches := len(stopwatches)
+	startIdx := m.stopwatchScrollOffset
+	if startIdx > totalStopwatches-maxVisible {
+		startIdx = max(0, totalStopwatches-maxVisible)
+	}
+	endIdx := min(startIdx+maxVisible, totalStopwatches)
+
+	// Show scroll indicator if needed
+	if startIdx > 0 {
+		content += lipgloss.NewStyle().Foreground(overlay0).Render("  ↑ more") + "\n"
+	}
+
+	now := time.Now()
+
+	// Render visible stopwatches
+	for i := startIdx; i < endIdx; i++ {
+		sw := stopwatches[i]
+		label := sw["label"].(string)
+		status := sw["status"].(string)
+
+		// Selection indicator (only if this column is active)
+		selected := "  "
+		if m.activeColumn == 1 && i == m.stopwatchSelectedIdx {
+			selected = selectedStyle.Render("> ")
+		}
+
+		statusIcon := "○"
+		statusStyle := inactiveTabStyle
+
+		if status == "running" {
+			statusIcon = "▶"
+			statusStyle = runningStyle
+		}
+
+		// Get elapsed time
+		var elapsedMs int64
+		if status == "running" {
+			if startedAt, ok := sw["started_at_ms"]; ok && startedAt != nil {
+				startedAtMs := int64(startedAt.(float64))
+				baseElapsed := int64(sw["elapsed_ms"].(float64))
+				elapsedMs = baseElapsed + now.UnixMilli() - startedAtMs
+			} else {
+				elapsedMs = int64(sw["elapsed_ms"].(float64))
+			}
+		} else {
+			elapsedMs = int64(sw["elapsed_ms"].(float64))
+		}
+
+		elapsedStr := formatStopwatch(elapsedMs)
+
+		content += fmt.Sprintf("%s%s %s %s\n",
+			selected,
+			statusStyle.Render(statusIcon),
+			label,
+			elapsedStr,
+		)
+	}
+
+	// Show scroll indicator if more below
+	if endIdx < totalStopwatches {
+		content += lipgloss.NewStyle().Foreground(overlay0).Render("  ↓ more") + "\n"
+	}
+
+	return content
+}
+
+// renderAmbienceContent renders ambience tab content (no header/footer)
+func (m Model) renderAmbienceContent() string {
+	var content string
+
+	// Global ambience toggle
+	globalStatus := "OFF"
+	globalColor := red
+	if m.userConfig.AmbienceEnabled {
+		globalStatus = "ON"
+		globalColor = green
+	}
+	content += "Ambience sounds are " + lipgloss.NewStyle().Foreground(globalColor).Bold(true).Render(globalStatus)
+	content += lipgloss.NewStyle().Foreground(overlay0).Render(" (press 'a' to toggle)")
+
+	if !m.userConfig.AmbienceEnabled {
+		content += "\n\n" + lipgloss.NewStyle().Foreground(overlay0).Render("Ambience sounds are disabled. Press 'a' to enable.")
+		return content
+	}
+
+	if len(m.userConfig.AmbienceSounds) == 0 {
+		content += "\n\n" + lipgloss.NewStyle().Foreground(red).Render("No ambience sound files found.")
+		content += "\n" + lipgloss.NewStyle().Foreground(overlay0).Render("Place .mp3 files in ~/.veranda/sounds/ambience/")
+		return content
+	}
+
+	content += "\n\n"
+
+	// Display list using ambienceDisplayOrder for sorted display
+	for displayIdx, configIdx := range m.ambienceDisplayOrder {
+		if configIdx < 0 || configIdx >= len(m.userConfig.AmbienceSounds) {
+			continue
+		}
+		sound := m.userConfig.AmbienceSounds[configIdx]
+
+		// Selection indicator
+		prefix := "  "
+		if displayIdx == m.ambienceSelectedIdx {
+			prefix = selectedStyle.Render("> ")
+		}
+
+		// Checkbox
+		checkbox := "[ ]"
+		if sound.Enabled {
+			checkbox = "[" + lipgloss.NewStyle().Foreground(green).Render("✓") + "]"
+		}
+
+		// Filename
+		filename := sound.Filename
+		if displayIdx == m.ambienceSelectedIdx {
+			filename = lipgloss.NewStyle().Foreground(lavender).Bold(true).Render(filename)
+		} else {
+			filename = lipgloss.NewStyle().Foreground(text).Render(filename)
+		}
+
+		// Volume bar
+		volBar := renderVolumeBar(sound.Volume, 10)
+		volPercent := int(sound.Volume * 100)
+		volStr := fmt.Sprintf("%3d%%", volPercent)
+		if displayIdx == m.ambienceSelectedIdx && m.editingAmbienceVolume {
+			volStr = lipgloss.NewStyle().Foreground(yellow).Render(volStr)
+		}
+
+		// Test indicator - check actual player state
+		testIndicator := "  "
+		if m.testAudioPlayer != nil && m.testAudioPlayer.IsTestPlaying(sound.Filename) {
+			testIndicator = lipgloss.NewStyle().Foreground(green).Render("▶ ")
+		}
+
+		content += fmt.Sprintf("%s%s %s %s %s %s",
+			prefix,
+			checkbox,
+			filename,
+			volBar,
+			volStr,
+			testIndicator,
+		)
+
+		if displayIdx < len(m.ambienceDisplayOrder)-1 {
+			content += "\n"
+		}
+	}
+
+	return content
+}
+
+// renderSkyfieldContent renders skyfield tab content (no header/footer)
+func (m Model) renderSkyfieldContent() string {
+	var content string
+
+	// Mode setting
+	modeText := m.userConfig.SkyfieldMode
+	if modeText == "" {
+		modeText = "random"
+	}
+	modeLine := fmt.Sprintf("Mode:      %s", modeText)
+	if m.skyfieldSelectedIdx == 0 {
+		modeLine = selectedStyle.Render("> ") + modeLine
+	} else {
+		modeLine = "  " + modeLine
+	}
+	content += modeLine + "\n"
+
+	// Names setting
+	namesText := "off"
+	if m.userConfig.SkyfieldShowNames {
+		namesText = "on"
+	}
+	namesLine := fmt.Sprintf("Names:     %s", namesText)
+	if m.skyfieldSelectedIdx == 1 {
+		namesLine = selectedStyle.Render("> ") + namesLine
+	} else {
+		namesLine = "  " + namesLine
+	}
+	content += namesLine + "\n"
+
+	// Location
+	locationText := "Mumbai"
+	if m.currentCity != nil {
+		locationText = m.currentCity.City
+	}
+	locationLine := fmt.Sprintf("Location:  %s", locationText)
+	if m.skyfieldSelectedIdx == 2 {
+		locationLine = selectedStyle.Render("> ") + locationLine
+	} else {
+		locationLine = "  " + locationLine
+	}
+	content += locationLine
+
+	return content
+}
+
+// renderPrefsContent renders preferences tab content (no header/footer)
+func (m Model) renderPrefsContent() string {
+	var content string
+
+	// Timer completion sound setting
+	content += "Timer Completion Sound\n"
+
+	if m.selectingSoundFile {
+		// Show dropdown with available sound files
+		content += lipgloss.NewStyle().Foreground(mauve).Render("Select a sound file:") + "\n\n"
+
+		if len(m.availableSoundFiles) == 0 {
+			content += lipgloss.NewStyle().Foreground(red).Render("  No MP3 files found in chimes directory") + "\n"
+			content += lipgloss.NewStyle().Foreground(overlay0).Render("  Place .mp3 files in ~/.veranda/sounds/chimes/") + "\n"
+		} else {
+			// Show up to 5 files at a time with scrolling
+			maxDisplay := 5
+			startIdx := 0
+			if m.selectedSoundIdx >= maxDisplay {
+				startIdx = m.selectedSoundIdx - maxDisplay + 1
+			}
+			endIdx := startIdx + maxDisplay
+			if endIdx > len(m.availableSoundFiles) {
+				endIdx = len(m.availableSoundFiles)
+			}
+
+			for i := startIdx; i < endIdx; i++ {
+				prefix := "  "
+				if i == m.selectedSoundIdx {
+					prefix = selectedStyle.Render("> ")
+				}
+				fileName := m.availableSoundFiles[i]
+				// Highlight current selection
+				if i == m.selectedSoundIdx {
+					fileName = lipgloss.NewStyle().Foreground(lavender).Bold(true).Render(fileName)
+				} else {
+					fileName = lipgloss.NewStyle().Foreground(text).Render(fileName)
+				}
+				content += prefix + fileName + "\n"
+			}
+
+			// Show count if there are more files
+			if len(m.availableSoundFiles) > maxDisplay {
+				content += lipgloss.NewStyle().Foreground(overlay0).Render(
+					fmt.Sprintf("  (%d more files)", len(m.availableSoundFiles)-maxDisplay)) + "\n"
+			}
+		}
+	} else {
+		// Show current value with edit hint
+		soundFile := m.userConfig.TimerCompletionSound
+		content += lipgloss.NewStyle().Foreground(lavender).Render(soundFile) + "\n"
+		content += lipgloss.NewStyle().Foreground(overlay0).Render("       [e]dit sound") + "\n"
+	}
+
+	content += "\n"
+
+	// Chime Volume setting
+	content += "Chime Volume\n"
+	volBar := renderVolumeBar(m.userConfig.ChimeVolume, 10)
+	volPercent := int(m.userConfig.ChimeVolume * 100)
+	volStr := fmt.Sprintf("%d%%", volPercent)
+	if m.editingChimeVolume {
+		volStr = lipgloss.NewStyle().Foreground(yellow).Render(volStr)
+	}
+	content += fmt.Sprintf("%s %s\n", volBar, volStr)
+	content += lipgloss.NewStyle().Foreground(overlay0).Render("       [v]olume (0-9)")
+
+	return content
 }
