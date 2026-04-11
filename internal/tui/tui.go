@@ -236,11 +236,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Toggle ambience enabled
 				newM, _, _ := m.handleAmbienceKey(" ")
 				return newM, nil
-			} else if m.activeTab == 2 && m.skyfieldSelectedIdx == 1 {
-				// Toggle names in skyfield tab
-				m.userConfig.SkyfieldShowNames = !m.userConfig.SkyfieldShowNames
-				// Save to DB
-				_ = m.userConfig.Save(m.settingsRepo)
+			} else if m.activeTab == 2 {
+				// Skyfield tab - toggle based on selection
+				switch m.skyfieldSelectedIdx {
+				case 0:
+					// Toggle mode
+					if m.userConfig.SkyfieldMode == "realistic" {
+						m.userConfig.SkyfieldMode = "random"
+						m.starfieldMode = ModeRandom
+					} else {
+						m.userConfig.SkyfieldMode = "realistic"
+						m.starfieldMode = ModeRealistic
+						m.realisticStarfield.Update(time.Now())
+					}
+					_ = m.userConfig.Save(m.settingsRepo)
+				case 1:
+					// Toggle names - update both config and display flag
+					m.userConfig.SkyfieldShowNames = !m.userConfig.SkyfieldShowNames
+					m.showObjectNames = m.userConfig.SkyfieldShowNames
+					_ = m.userConfig.Save(m.settingsRepo)
+				case 2:
+					// Open city picker for location
+					if m.citiesRepo != nil {
+						m.showCityPicker = true
+						m.cityPickerSearch = ""
+						m.loadAllCities()
+					}
+				}
 			}
 		case "d":
 			// Delete selected timer or stopwatch
@@ -1247,7 +1269,7 @@ func (m Model) renderSkyfield() string {
 	content += locationLine + "\n"
 
 	content += "\n" + lipgloss.NewStyle().Foreground(overlay0).Render(
-		"↑↓:select [←/→]:toggle mode [space]:toggle names [l]:change location") + "\n"
+		"↑↓:select [space]:toggle value [l]:change location") + "\n"
 
 	return content
 }
