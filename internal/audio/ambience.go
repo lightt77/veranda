@@ -183,3 +183,28 @@ func (s *AmbienceService) checkAndUpdatePlayback() {
 func (s *AmbienceService) GetPlayer() *Player {
 	return s.player
 }
+
+// RefreshPlayback reloads config and restarts playback if currently auto-playing
+func (s *AmbienceService) RefreshPlayback() {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	// Reload user config
+	userConfig := config.LoadUserConfig(s.settingsRepo)
+
+	// If ambience is disabled globally, stop any auto-playing audio
+	if !userConfig.AmbienceEnabled && s.player.IsPlaying() && s.isAutoPlaying {
+		s.player.Stop(config.AudioFadeOutDuration)
+		s.isAutoPlaying = false
+		return
+	}
+
+	// If we're auto-playing, restart with new configuration
+	if s.player.IsPlaying() && s.isAutoPlaying {
+		s.player.Stop(0) // Stop immediately without fade
+		if err := s.player.PlayMultiple(userConfig.AmbienceSounds); err != nil {
+			return
+		}
+		s.player.FadeIn(config.AudioFadeInDuration)
+	}
+}

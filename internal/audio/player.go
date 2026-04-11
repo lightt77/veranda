@@ -448,6 +448,8 @@ func (p *Player) playbackLoop(stream *AudioStream) {
 	defer stream.wg.Done()
 
 	fullPath := filepath.Join(p.ambienceDir, stream.filename)
+	consecutiveErrors := 0
+	maxConsecutiveErrors := 5
 
 	for {
 		select {
@@ -456,14 +458,22 @@ func (p *Player) playbackLoop(stream *AudioStream) {
 		default:
 			if err := p.playFile(stream, fullPath); err != nil {
 				fmt.Fprintf(os.Stderr, "Error playing %s: %v\n", stream.filename, err)
-				// Signal ready channel even on error to prevent hanging
-				stream.readyOnce.Do(func() {
-					close(stream.readyChan)
-				})
-				// Don't loop on error, exit
-				return
+				consecutiveErrors++
+				if consecutiveErrors >= maxConsecutiveErrors {
+					// Too many consecutive errors, give up
+					stream.readyOnce.Do(func() {
+						close(stream.readyChan)
+					})
+					return
+				}
+				// Wait before retrying
+				time.Sleep(100 * time.Millisecond)
+				continue
 			}
-			// Loop continuously (both regular and test playback)
+			// Success - reset error counter
+			consecutiveErrors = 0
+			// Small delay to ensure proper cleanup before restarting
+			time.Sleep(10 * time.Millisecond)
 		}
 	}
 }

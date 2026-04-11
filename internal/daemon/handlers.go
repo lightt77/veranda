@@ -531,3 +531,13 @@ func (s *Server) handleAmbientSetVolume(w http.ResponseWriter, r *http.Request) 
 	// Volume is now controlled per-sound via TUI/config, not via API
 	respondError(w, http.StatusNotImplemented, "volume is now controlled per-sound via TUI. Use the Ambience tab tab.")
 }
+
+func (s *Server) handleAmbientRefresh(w http.ResponseWriter, r *http.Request) {
+	if s.ambienceService == nil {
+		respondError(w, http.StatusServiceUnavailable, "ambience sound not available")
+		return
+	}
+
+	s.ambienceService.RefreshPlayback()
+	respondJSON(w, http.StatusOK, map[string]string{"status": "refreshed"})
+}

@@ -250,6 +250,10 @@ func (m *Model) saveAmbienceSettings() {
 		m.setSettingsMessage(fmt.Sprintf("Error saving: %v", err))
 	} else {
 		m.setSettingsMessage("Ambience settings saved!")
+		// Notify daemon to refresh playback with new settings
+		if m.client != nil {
+			_ = m.client.RefreshAmbience()
+		}
 	}
 }
 

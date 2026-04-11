@@ -171,6 +171,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/status", s.handleAmbientStatus)
 		r.Post("/play", s.handleAmbientPlay)
 		r.Post("/stop", s.handleAmbientStop)
+		r.Post("/refresh", s.handleAmbientRefresh)
 		r.Put("/volume", s.handleAmbientSetVolume)
 	})
 }
