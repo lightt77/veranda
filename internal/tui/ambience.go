@@ -3,7 +3,6 @@ package tui
 
 import (
 	"fmt"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -273,10 +272,9 @@ func (m *Model) resetAmbience() {
 	m.setSettingsMessage("Reset to defaults")
 }
 
-// setSettingsMessage sets a message to display in the settings area
+// setSettingsMessage queues a status message for display on L8
 func (m *Model) setSettingsMessage(msg string) {
-	m.settingsMessage = msg
-	m.settingsMessageTime = time.Now()
+	m.setStatusMessage(msg)
 }
 
 // stopAllTestPlayback stops all ambient test playback
