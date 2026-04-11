@@ -114,41 +114,31 @@ func (s *AmbienceService) checkAndUpdatePlayback() {
 	// Load user config first to check if ambience is enabled globally
 	userConfig := config.LoadUserConfig(s.settingsRepo)
 
-	// Debug logging
-	fmt.Printf("[Ambience] Enabled=%v, Playing=%v, AutoPlaying=%v\n",
-		userConfig.AmbienceEnabled, s.player.IsPlaying(), s.isAutoPlaying)
-
 	// Check if any timer is about to end (within fade out duration)
 	timersAboutToEnd, err := s.timerService.GetRunningTimersAboutToEnd(config.AudioFadeOutDuration)
 	if err != nil {
-		fmt.Printf("Error checking timers about to end: %v\n", err)
 		return
 	}
 
 	// Check if any timer is running
 	timersRunning, err := s.timerService.AnyRunning()
 	if err != nil {
-		fmt.Printf("Error checking timers: %v\n", err)
 		return
 	}
 
 	// Check if any stopwatch is running
 	stopwatchesRunning, err := s.stopwatchService.AnyRunning()
 	if err != nil {
-		fmt.Printf("Error checking stopwatches: %v\n", err)
 		return
 	}
 
 	anyActive := timersRunning || stopwatchesRunning
-	fmt.Printf("[Ambience] Timers running=%v, Stopwatches running=%v, AnyActive=%v\n",
-		timersRunning, stopwatchesRunning, anyActive)
 
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
 	// If ambience is disabled globally, stop any auto-playing audio
 	if !userConfig.AmbienceEnabled && s.player.IsPlaying() && s.isAutoPlaying {
-		fmt.Printf("[Ambience] Stopping because disabled\n")
 		s.player.Stop(config.AudioFadeOutDuration)
 		s.isAutoPlaying = false
 		return
@@ -156,7 +146,6 @@ func (s *AmbienceService) checkAndUpdatePlayback() {
 
 	// If a timer is about to end and we're auto-playing, stop playback
 	if len(timersAboutToEnd) > 0 && s.player.IsPlaying() && s.isAutoPlaying {
-		fmt.Printf("[Ambience] Stopping because timer about to end\n")
 		s.player.Stop(config.AudioFadeOutDuration)
 		s.isAutoPlaying = false
 		return
@@ -164,7 +153,6 @@ func (s *AmbienceService) checkAndUpdatePlayback() {
 
 	// Only auto-start if ambience is enabled globally
 	if userConfig.AmbienceEnabled && anyActive && !s.player.IsPlaying() {
-		fmt.Printf("[Ambience] Starting playback\n")
 		// Start ambience sound with all enabled sounds
 		if err := s.player.PlayMultiple(userConfig.AmbienceSounds); err != nil {
 			return
@@ -172,7 +160,6 @@ func (s *AmbienceService) checkAndUpdatePlayback() {
 		s.player.FadeIn(config.AudioFadeInDuration)
 		s.isAutoPlaying = true
 	} else if !anyActive && s.player.IsPlaying() && s.isAutoPlaying {
-		fmt.Printf("[Ambience] Stopping because no activity\n")
 		// Stop if no longer active (and we were auto-playing)
 		s.player.Stop(config.AudioFadeOutDuration)
 		s.isAutoPlaying = false

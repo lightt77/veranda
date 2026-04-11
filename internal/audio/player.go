@@ -496,13 +496,32 @@ func (p *Player) playFile(stream *AudioStream, filename string) error {
 
 	// Create volume control wrapper
 	p.mutex.Lock()
-	volCtrl := &effects.Volume{
-		Streamer: resampled,
-		Base:     2,
-		Volume:   -60, // Start silent
-		Silent:   true,
+
+	var volCtrl *effects.Volume
+
+	// Check if this is the first playback (readyChan still open) or subsequent
+	// For first playback, start silent for fade-in. For subsequent, use target volume.
+	select {
+	case <-stream.readyChan:
+		// Subsequent playback - use target volume immediately
+		targetVolume := stream.volume * p.globalVol
+		volCtrl = &effects.Volume{
+			Streamer: resampled,
+			Base:     2,
+			Volume:   volumeToDB(targetVolume),
+			Silent:   targetVolume == 0,
+		}
+	default:
+		// First playback - start silent for fade-in
+		volCtrl = &effects.Volume{
+			Streamer: resampled,
+			Base:     2,
+			Volume:   -60, // Start silent
+			Silent:   true,
+		}
 	}
 	stream.volumeCtrl = volCtrl
+
 	stream.isPlaying = true
 	// Signal that volume control is ready for fade operations (only once)
 	stream.readyOnce.Do(func() {
