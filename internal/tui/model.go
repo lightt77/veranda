@@ -219,6 +219,8 @@ func New(port int, citiesRepo *repository.CitiesRepository, settingsRepo config.
 		availableAmbienceFiles: availableAmbience,
 		ambienceDisplayOrder:   displayOrder,
 		ambienceSelectedIdx:    0,
+		// Skyfield tab defaults
+		showObjectNames: userConfig.SkyfieldShowNames,
 		// Timers/Stopwatches tab defaults
 		showTimers:           true,
 		showStopwatches:      true,
