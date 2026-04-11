@@ -157,6 +157,10 @@ func (m Model) handleAmbienceKey(key string) (Model, tea.Cmd, bool) {
 		// Reset to defaults
 		m.resetAmbience()
 		return m, nil, true
+	case "R":
+		// Refresh file list
+		m.refreshAmbienceFiles()
+		return m, nil, true
 	}
 
 	return m, nil, false
@@ -296,4 +300,50 @@ func (m *Model) initTestAudioPlayer() error {
 		m.testAudioPlayer = player
 	}
 	return nil
+}
+
+// refreshAmbienceFiles reloads the ambience file list and updates config
+func (m *Model) refreshAmbienceFiles() {
+	// Reload available files from disk
+	m.availableAmbienceFiles = loadAvailableSoundFiles(m.ambienceDir)
+
+	// Create a map of existing config entries by filename
+	existingConfigs := make(map[string]config.AmbienceSoundConfig)
+	for _, sound := range m.userConfig.AmbienceSounds {
+		existingConfigs[sound.Filename] = sound
+	}
+
+	// Build new ambience sounds list
+	var newSounds []config.AmbienceSoundConfig
+	for _, filename := range m.availableAmbienceFiles {
+		if existing, ok := existingConfigs[filename]; ok {
+			// Keep existing config for this file
+			newSounds = append(newSounds, existing)
+		} else {
+			// New file - add as disabled by default
+			newSounds = append(newSounds, config.AmbienceSoundConfig{
+				Filename: filename,
+				Volume:   config.DefaultAmbienceVolume,
+				Enabled:  false,
+			})
+		}
+	}
+
+	// Update config
+	m.userConfig.AmbienceSounds = newSounds
+
+	// Rebuild display order
+	m.ambienceDisplayOrder = initAmbienceDisplayOrder(newSounds)
+
+	// Adjust selection if needed
+	if m.ambienceSelectedIdx >= len(m.ambienceDisplayOrder) {
+		m.ambienceSelectedIdx = 0
+		if len(m.ambienceDisplayOrder) > 0 {
+			m.ambienceSelectedIdx = len(m.ambienceDisplayOrder) - 1
+		}
+	}
+
+	// Save updated config
+	m.saveAmbienceSettings()
+	m.setSettingsMessage(fmt.Sprintf("Refreshed: %d files found", len(newSounds)))
 }

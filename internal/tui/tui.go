@@ -1534,7 +1534,9 @@ func (m Model) renderHelpLine() string {
 			lipgloss.NewStyle().Foreground(mauve).Render("v") +
 			lipgloss.NewStyle().Foreground(overlay0).Render(":vol ") +
 			lipgloss.NewStyle().Foreground(mauve).Render("r") +
-			lipgloss.NewStyle().Foreground(overlay0).Render(":reset")
+			lipgloss.NewStyle().Foreground(overlay0).Render(":reset ") +
+			lipgloss.NewStyle().Foreground(mauve).Render("R") +
+			lipgloss.NewStyle().Foreground(overlay0).Render(":refresh")
 	case 2:
 		// Skyfield tab
 		return lipgloss.NewStyle().Foreground(mauve).Render("↑↓") +
