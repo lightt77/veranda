@@ -92,14 +92,6 @@ func (m Model) renderAmbience() string {
 	}
 
 	// Instructions
-	content += "\n" + lipgloss.NewStyle().Foreground(overlay0).Render(
-		"a:ambience on/off • space:toggle sound • t:test • v:volume • r:reset") + "\n"
-
-	// Show settings message if any
-	if m.settingsMessage != "" {
-		content += "\n" + lipgloss.NewStyle().Foreground(green).Render(m.settingsMessage) + "\n"
-	}
-
 	return content
 }
 
