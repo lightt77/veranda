@@ -1353,7 +1353,23 @@ func (m Model) getTimersStopwatchesSelectedLine() int {
 		return 1 + m.stopwatchSelectedIdx
 	}
 
-	// Two column layout - not handled here, selection tracking is per-column
+	// Two column layout - both visible, use active column to determine selection line
+	if m.showTimers && m.showStopwatches {
+		if m.activeColumn == 0 {
+			// Timers column is active
+			if m.timerSelectedIdx < 0 {
+				return -1
+			}
+			return 1 + (m.timerSelectedIdx * 2)
+		} else {
+			// Stopwatches column is active
+			if m.stopwatchSelectedIdx < 0 {
+				return -1
+			}
+			return 1 + m.stopwatchSelectedIdx
+		}
+	}
+
 	return -1
 }
 
