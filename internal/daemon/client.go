@@ -262,6 +262,15 @@ func (c *Client) SetAmbienceVolume(volume float64) error {
 	return decodeJSON(resp, &struct{}{})
 }
 
+// RefreshAmbience tells the daemon to reload config and refresh playback
+func (c *Client) RefreshAmbience() error {
+	resp, err := c.doRequest("POST", "/ambient/refresh", nil)
+	if err != nil {
+		return err
+	}
+	return decodeJSON(resp, &struct{}{})
+}
+
 // StopDaemon sends a shutdown request to the daemon
 func (c *Client) StopDaemon() error {
 	resp, err := c.doRequest("POST", "/daemon/shutdown", nil)
