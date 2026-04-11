@@ -103,8 +103,6 @@ type Model struct {
 	configDir           string
 	chimesDir           string
 	ambienceDir         string
-	settingsMessage     string
-	settingsMessageTime time.Time
 	selectingSoundFile  bool // dropdown mode for selecting chime sound file
 	availableSoundFiles []string
 	selectedSoundIdx    int

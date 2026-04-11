@@ -1474,12 +1474,7 @@ func (m Model) renderPrefs() string {
 		volStr = lipgloss.NewStyle().Foreground(yellow).Render(volStr)
 	}
 	content += fmt.Sprintf("%s %s\n", volBar, volStr)
-	content += lipgloss.NewStyle().Foreground(overlay0).Render("       [v]olume (0-9)") + "\n"
-
-	// Show settings message if any
-	if m.settingsMessage != "" {
-		content += "\n" + lipgloss.NewStyle().Foreground(green).Render(m.settingsMessage) + "\n"
-	}
+	content += lipgloss.NewStyle().Foreground(overlay0).Render("       [v]olume (0-9)")
 
 	return content
 }
