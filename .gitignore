@@ -22,6 +22,11 @@
 /vendor/
 
 # =========================
+# Generated Dependencies
+# =========================
+node_modules/
+
+# =========================
 # SQLite Database Files
 # =========================
 *.db
